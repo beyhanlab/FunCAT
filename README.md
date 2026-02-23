@@ -9,7 +9,7 @@ Long-read fungal genome assembly pipeline using Flye.
 conda env create -f environment.yml  
 conda activate fungalflye  
 
-pip install git+https://github.com/YOURNAME/FungalFlye
+pip install git+https://github.com/beyhanlab/FungalFlye.git
 
 ## Run
 
