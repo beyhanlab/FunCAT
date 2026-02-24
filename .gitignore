@@ -1,3 +1,12 @@
-.DS_Store
+# Python
 __pycache__/
 *.pyc
+
+# Mac
+.DS_Store
+
+# Outputs
+fungalflye_qc/
+*.fastq
+*.fasta
+*.paf

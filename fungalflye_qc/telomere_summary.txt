@@ -1,3 +1,0 @@
-Total contigs: 9
-Telomeric ends: 9/18
-Contigs with telomeres on BOTH ends: 3

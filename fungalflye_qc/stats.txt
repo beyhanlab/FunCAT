@@ -1,2 +1,0 @@
-file                                                                                                                                                     format  type  num_seqs     sum_len  min_len      avg_len    max_len
-/Users/jdurazo/Library/CloudStorage/OneDrive-J.CraigVenterInstitute/Desktop/Projects/Bioinformatics/Cocci_sequencing/TKO_fungalflye/newtest/final.fasta  FASTA   DNA          9  27,091,457   24,659  3,010,161.9  7,486,694
