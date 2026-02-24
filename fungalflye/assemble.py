@@ -1,13 +1,23 @@
+# assemble.py
+
 import subprocess
 from pathlib import Path
 import shutil
 import shutil as sh
 
 
+# ------------------------------------------------
+# helper runner
+# ------------------------------------------------
+
 def run(cmd):
     print(f"\n[fungalflye] Running: {cmd}\n")
     subprocess.run(cmd, shell=True, check=True)
 
+
+# ------------------------------------------------
+# dependency check
+# ------------------------------------------------
 
 def check_dependencies():
 
@@ -29,6 +39,10 @@ def check_dependencies():
 
         raise SystemExit(1)
 
+
+# ------------------------------------------------
+# prune redundant contigs
+# ------------------------------------------------
 
 def prune_contained_contigs(fasta, out_fasta, threads=8):
 
@@ -82,6 +96,10 @@ def prune_contained_contigs(fasta, out_fasta, threads=8):
     print(f"[fungalflye] Removed {len(remove)} redundant contigs")
 
 
+# ------------------------------------------------
+# main assembly pipeline (RESUMABLE)
+# ------------------------------------------------
+
 def run_assembly(
     reads,
     genome_size,
@@ -99,7 +117,10 @@ def run_assembly(
     reads = Path(reads)
 
     flye_dir = outdir / "flye"
+
     filtered_reads = outdir / "reads.filtered.fastq"
+    downsampled_reads = outdir / "reads.downsampled.fastq"
+
     paf = outdir / "reads.paf"
 
     racon_fasta = outdir / "racon.fasta"
@@ -108,38 +129,132 @@ def run_assembly(
 
     reads_used = reads
 
-    # filtering
-    if min_read_len > 0:
-        run(f"seqkit seq -m {min_read_len} {reads} > {filtered_reads}")
-        reads_used = filtered_reads
+    print("\n" + "=" * 60)
+    print("🧬 FungalFlye Assembly Pipeline")
+    print("=" * 60)
 
-    # Flye
-    run(
-        f"flye --nano-hq {reads_used} "
-        f"--genome-size {genome_size} "
-        f"--threads {threads} "
-        f"--iterations 3 "
-        f"--asm-coverage 60 "
-        f"--keep-haplotypes "
-        f"-o {flye_dir}"
-    )
+    # ------------------------------------------------
+    # FILTERING
+    # ------------------------------------------------
+
+    if min_read_len > 0:
+
+        if filtered_reads.exists():
+            print("[fungalflye] Found filtered reads — skipping")
+            reads_used = filtered_reads
+        else:
+            print("\n[fungalflye] Filtering reads")
+            run(f"seqkit seq -m {min_read_len} {reads} > {filtered_reads}")
+            reads_used = filtered_reads
+
+    # ------------------------------------------------
+    # DOWNSAMPLING
+    # ------------------------------------------------
+
+    if downsample_cov > 0:
+
+        if downsampled_reads.exists():
+            print("[fungalflye] Found downsampled reads — skipping")
+            reads_used = downsampled_reads
+        else:
+            print("\n[fungalflye] Downsampling reads")
+
+            g = str(genome_size).lower()
+
+            if "m" in g:
+                genome_bp = int(g.replace("m", "")) * 1_000_000
+            else:
+                genome_bp = int(g)
+
+            target_bases = genome_bp * downsample_cov
+
+            run(
+                f"filtlong --target_bases {target_bases} "
+                f"{reads_used} > {downsampled_reads}"
+            )
+
+            reads_used = downsampled_reads
+
+    # safety
+    if not reads_used.exists():
+        raise RuntimeError("Reads missing after preprocessing")
+
+    # ------------------------------------------------
+    # FLYE
+    # ------------------------------------------------
 
     assembly = flye_dir / "assembly.fasta"
 
-    # mapping
-    run(
-        f"minimap2 -x map-ont -t {threads} "
-        f"{assembly} {reads_used} > {paf}"
+    if assembly.exists():
+        print("[fungalflye] Existing Flye assembly detected — skipping")
+    else:
+        print("\n[fungalflye] Running Flye assembly")
+        run(
+            f"flye --nano-hq {reads_used} "
+            f"--genome-size {genome_size} "
+            f"--threads {threads} "
+            f"--iterations 3 "
+            f"--asm-coverage 60 "
+            f"--keep-haplotypes "
+            f"-o {flye_dir}"
+        )
+
+    if not assembly.exists():
+        raise RuntimeError("Flye assembly failed")
+
+    # ------------------------------------------------
+    # MAPPING
+    # ------------------------------------------------
+
+    if paf.exists():
+        print("[fungalflye] Existing read mapping detected — skipping")
+    else:
+        print("\n[fungalflye] Mapping reads")
+        run(
+            f"minimap2 -x map-ont -t {threads} "
+            f"{assembly} {reads_used} > {paf}"
+        )
+
+    # ------------------------------------------------
+    # RACON POLISHING
+    # ------------------------------------------------
+
+    if racon_fasta.exists():
+        print("[fungalflye] Existing racon polish detected — skipping")
+    else:
+        print("\n[fungalflye] Running Racon polishing")
+        run(f"racon {reads_used} {paf} {assembly} > {racon_fasta}")
+
+    if not racon_fasta.exists():
+        raise RuntimeError("Racon polishing failed")
+
+    # ------------------------------------------------
+    # PRUNING
+    # ------------------------------------------------
+
+    if pruned_fasta.exists():
+        print("[fungalflye] Existing pruned assembly detected — skipping")
+    else:
+        prune_contained_contigs(racon_fasta, pruned_fasta, threads)
+
+    # ------------------------------------------------
+    # FINAL
+    # ------------------------------------------------
+
+    if final_fasta.exists():
+        print("[fungalflye] Final assembly already exists")
+    else:
+        shutil.copy(pruned_fasta, final_fasta)
+
+    n_contigs = sum(
+        1 for line in open(final_fasta) if line.startswith(">")
     )
 
-    # racon
-    run(f"racon {reads_used} {paf} {assembly} > {racon_fasta}")
-
-    prune_contained_contigs(racon_fasta, pruned_fasta, threads)
-
-    shutil.copy(pruned_fasta, final_fasta)
-
-    print("\n🧬 Assembly Complete")
-    print(f"Final assembly: {final_fasta}\n")
+    print("\n" + "=" * 60)
+    print("✅ Assembly Complete")
+    print("=" * 60)
+    print(f"Final assembly: {final_fasta}")
+    print(f"Contigs: {n_contigs}")
+    print("=" * 60 + "\n")
 
     return str(final_fasta)

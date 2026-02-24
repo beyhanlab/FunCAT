@@ -34,7 +34,7 @@ What FungalFlye does:
   • Detects telomere repeats
   • Generates publication-ready QC metrics
 
-Designed for fungal genomes (10–80 Mb)
+Designed for fungal genomes (~10–80 Mb)
 Optimized for ONT long-read sequencing
 
 ============================================================
@@ -101,11 +101,9 @@ def wizard():
 
     typer.echo("Welcome to FungalFlye.\n")
     typer.echo(
-        "This interactive wizard will guide you from raw Nanopore reads\n"
+        "This wizard will guide you from raw Nanopore reads\n"
         "to a polished fungal genome assembly with QC metrics.\n"
     )
-
-    start_time = time.time()
 
     while True:
 
@@ -127,9 +125,9 @@ def wizard():
         if mode == "4":
             return
 
-        # -------------------------
-        # QC ONLY MODE
-        # -------------------------
+        # ------------------------------------------------
+        # QC ONLY
+        # ------------------------------------------------
 
         if mode == "3":
 
@@ -171,6 +169,16 @@ def wizard():
 
         Path(outdir).mkdir(exist_ok=True)
 
+        # Resume detection
+        if (Path(outdir) / "final.fasta").exists():
+            typer.echo(
+                "\n⚠️ Existing assembly detected in output folder."
+            )
+            typer.echo(
+                "Pipeline will automatically resume from the last "
+                "completed step.\n"
+            )
+
         typer.echo("\n🧾 Plan:")
         typer.echo(f"Reads: {reads}")
         typer.echo(f"Genome size: {gsize}")
@@ -195,9 +203,9 @@ def wizard():
 
         typer.echo(f"\nSuggested minimum read length: {suggested_cutoff} bp")
 
-        # -------------------------
+        # ------------------------------------------------
         # FILTER OPTION
-        # -------------------------
+        # ------------------------------------------------
 
         apply_filter = typer.confirm("Apply read filtering?", default=True)
 
@@ -220,9 +228,9 @@ def wizard():
             if confirm:
                 min_read_len = cutoff
 
-        # -------------------------
+        # ------------------------------------------------
         # DOWNSAMPLE
-        # -------------------------
+        # ------------------------------------------------
 
         downsample_cov = typer.prompt(
             "Downsample coverage? (0 = none)",
@@ -237,6 +245,8 @@ def wizard():
         # ------------------------------------------------
         # ASSEMBLY
         # ------------------------------------------------
+
+        start_time = time.time()
 
         typer.echo("\n🧬 Step 2 — Genome assembly\n")
 
