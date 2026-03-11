@@ -1,9 +1,9 @@
-# assemble.py
-
 import subprocess
 from pathlib import Path
 import shutil
 import shutil as sh
+import json
+from Bio import SeqIO
 
 
 # ------------------------------------------------
@@ -21,7 +21,7 @@ def run(cmd):
 
 def check_dependencies():
 
-    tools = ["flye", "minimap2", "racon", "seqkit"]
+    tools = ["flye", "minimap2", "racon", "seqkit", "filtlong"]
 
     missing = []
 
@@ -41,12 +41,33 @@ def check_dependencies():
 
 
 # ------------------------------------------------
-# prune redundant contigs
+# pruning helpers
 # ------------------------------------------------
 
-def prune_contained_contigs(fasta, out_fasta, threads=8):
+def write_prune_settings(settings_path, settings_dict):
+    with open(settings_path, "w") as fh:
+        json.dump(settings_dict, fh, indent=2)
 
-    print("\n[fungalflye] Pruning redundant contigs (>95% contained)\n")
+
+def load_prune_settings(settings_path):
+    if not Path(settings_path).exists():
+        return None
+    with open(settings_path) as fh:
+        return json.load(fh)
+
+
+def prune_contained_contigs(
+    fasta,
+    out_fasta,
+    threads=8,
+    min_identity=0.95,
+    min_coverage=0.95
+):
+
+    print(
+        f"\n[fungalflye] Pruning contained contigs "
+        f"(identity >= {min_identity}, coverage >= {min_coverage})\n"
+    )
 
     fasta = Path(fasta)
     out_fasta = Path(out_fasta)
@@ -59,7 +80,6 @@ def prune_contained_contigs(fasta, out_fasta, threads=8):
 
     with open(paf) as f:
         for line in f:
-
             cols = line.strip().split()
 
             q = cols[0]
@@ -77,23 +97,49 @@ def prune_contained_contigs(fasta, out_fasta, threads=8):
             identity = matches / aln_len if aln_len > 0 else 0
             coverage = aln_len / qlen if qlen > 0 else 0
 
-            if identity > 0.95 and coverage > 0.95:
+            if identity >= min_identity and coverage >= min_coverage:
                 if qlen < tlen:
                     remove.add(q)
 
-    with open(out_fasta, "w") as out:
-        keep = True
-        with open(fasta) as f:
-            for line in f:
-                if line.startswith(">"):
-                    name = line[1:].split()[0]
-                    keep = name not in remove
-                if keep:
-                    out.write(line)
+    kept_records = []
+    removed_count = 0
+
+    for record in SeqIO.parse(str(fasta), "fasta"):
+        if record.id in remove:
+            removed_count += 1
+        else:
+            kept_records.append(record)
+
+    SeqIO.write(kept_records, str(out_fasta), "fasta")
 
     paf.unlink(missing_ok=True)
 
-    print(f"[fungalflye] Removed {len(remove)} redundant contigs")
+    print(f"[fungalflye] Removed {removed_count} contained contigs")
+
+    return removed_count
+
+
+def prune_small_contigs(fasta, out_fasta, min_size=20000):
+
+    print(f"\n[fungalflye] Removing contigs smaller than {min_size} bp\n")
+
+    fasta = Path(fasta)
+    out_fasta = Path(out_fasta)
+
+    kept_records = []
+    removed_count = 0
+
+    for record in SeqIO.parse(str(fasta), "fasta"):
+        if len(record.seq) < min_size:
+            removed_count += 1
+        else:
+            kept_records.append(record)
+
+    SeqIO.write(kept_records, str(out_fasta), "fasta")
+
+    print(f"[fungalflye] Removed {removed_count} small contigs")
+
+    return removed_count
 
 
 # ------------------------------------------------
@@ -107,6 +153,9 @@ def run_assembly(
     threads=8,
     min_read_len=0,
     downsample_cov=0,
+    min_contig_size=20000,
+    prune_identity=0.95,
+    prune_coverage=0.95,
 ):
 
     check_dependencies()
@@ -124,8 +173,11 @@ def run_assembly(
     paf = outdir / "reads.paf"
 
     racon_fasta = outdir / "racon.fasta"
+    contained_fasta = outdir / "contained_pruned.fasta"
     pruned_fasta = outdir / "pruned.fasta"
     final_fasta = outdir / "final.fasta"
+
+    prune_settings_path = outdir / "prune_settings.json"
 
     reads_used = reads
 
@@ -175,7 +227,6 @@ def run_assembly(
 
             reads_used = downsampled_reads
 
-    # safety
     if not reads_used.exists():
         raise RuntimeError("Reads missing after preprocessing")
 
@@ -216,7 +267,7 @@ def run_assembly(
         )
 
     # ------------------------------------------------
-    # RACON POLISHING
+    # RACON
     # ------------------------------------------------
 
     if racon_fasta.exists():
@@ -232,17 +283,51 @@ def run_assembly(
     # PRUNING
     # ------------------------------------------------
 
-    if pruned_fasta.exists():
-        print("[fungalflye] Existing pruned assembly detected — skipping")
+    current_prune_settings = {
+        "min_contig_size": int(min_contig_size),
+        "prune_identity": float(prune_identity),
+        "prune_coverage": float(prune_coverage),
+    }
+
+    old_prune_settings = load_prune_settings(prune_settings_path)
+
+    rerun_pruning = (
+        (not contained_fasta.exists())
+        or (not pruned_fasta.exists())
+        or (old_prune_settings != current_prune_settings)
+    )
+
+    if rerun_pruning:
+        print("\n[fungalflye] Running pruning workflow")
+
+        prune_contained_contigs(
+            racon_fasta,
+            contained_fasta,
+            threads=threads,
+            min_identity=prune_identity,
+            min_coverage=prune_coverage,
+        )
+
+        prune_small_contigs(
+            contained_fasta,
+            pruned_fasta,
+            min_size=min_contig_size,
+        )
+
+        write_prune_settings(prune_settings_path, current_prune_settings)
+
     else:
-        prune_contained_contigs(racon_fasta, pruned_fasta, threads)
+        print("[fungalflye] Existing pruned assembly detected with same settings — skipping")
 
     # ------------------------------------------------
     # FINAL
     # ------------------------------------------------
 
     if final_fasta.exists():
-        print("[fungalflye] Final assembly already exists")
+        if old_prune_settings != current_prune_settings:
+            shutil.copy(pruned_fasta, final_fasta)
+        else:
+            print("[fungalflye] Final assembly already exists")
     else:
         shutil.copy(pruned_fasta, final_fasta)
 
@@ -255,6 +340,7 @@ def run_assembly(
     print("=" * 60)
     print(f"Final assembly: {final_fasta}")
     print(f"Contigs: {n_contigs}")
+    print(f"Small-contig cutoff used: {min_contig_size} bp")
     print("=" * 60 + "\n")
 
     return str(final_fasta)
