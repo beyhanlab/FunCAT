@@ -126,34 +126,40 @@ def wizard():
         # COMPARE GENOMES
         # ------------------------------------------------
 
-        if mode == "4":
+     if mode == "4":
 
-            reference = typer.prompt(
-                "Path to reference genome FASTA",
-                value_proc=path_exists
-            )
+    while True:
 
-            query = typer.prompt(
-                "Path to query genome FASTA",
-                value_proc=path_exists
-            )
+        reference = typer.prompt(
+            "Reference genome",
+            value_proc=path_exists
+        )
 
-            outdir = typer.prompt(
-                "Comparison output folder",
-                default="fungalflye_compare"
-            )
+        query = typer.prompt(
+            "Query genome",
+            value_proc=path_exists
+        )
 
-            run_snps = typer.confirm("Run SNP detection?", default=True)
-            run_dots = typer.confirm("Generate genome dotplot?", default=True)
+        outdir = typer.prompt(
+            "Output folder",
+            default="fungalflye_compare"
+        )
 
-            if run_snps:
-                run_snp_analysis(reference, query, outdir)
+        if typer.confirm("Run SNP detection?", default=True):
+            run_snp_analysis(reference, query, outdir)
 
-            if run_dots:
-                run_dotplot(reference, query, outdir)
+        if typer.confirm("Generate dotplot?", default=True):
+            run_dotplot(reference, query, outdir)
 
-            typer.echo("\n🎉 Genome comparison complete.\n")
-            return
+        again = typer.prompt(
+            "\nRun another comparison?\n1 Yes\n2 No",
+            default="2"
+        )
+
+        if again != "1":
+            break
+
+    return
 
         # ------------------------------------------------
         # ASSEMBLY / FULL
