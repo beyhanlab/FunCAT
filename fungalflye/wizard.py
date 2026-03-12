@@ -77,13 +77,9 @@ def wizard():
 
         typer.echo("\nSelect workflow mode:\n")
         typer.echo("  1) Full pipeline")
-        typer.echo("     Reads → Assembly → QC → Telomeres")
         typer.echo("  2) Assembly only")
-        typer.echo("     Reads → Assembly")
         typer.echo("  3) QC only")
-        typer.echo("     Existing FASTA → QC report")
-        typer.echo("  4) Compare genomes")
-        typer.echo("     SNP detection + dotplot")
+        typer.echo("  4) Compare genomes (SNPs + dotplot)")
         typer.echo("  5) Exit\n")
 
         mode = typer.prompt("Enter choice", default="1")
@@ -123,46 +119,43 @@ def wizard():
             return
 
         # ------------------------------------------------
-        # COMPARE GENOMES
+        # GENOME COMPARISON MODE
         # ------------------------------------------------
 
-     if mode == "4":
+        if mode == "4":
 
-    while True:
+            while True:
 
-        reference = typer.prompt(
-            "Reference genome",
-            value_proc=path_exists
-        )
+                reference = typer.prompt(
+                    "Reference genome",
+                    value_proc=path_exists
+                )
 
-        query = typer.prompt(
-            "Query genome",
-            value_proc=path_exists
-        )
+                query = typer.prompt(
+                    "Query genome",
+                    value_proc=path_exists
+                )
 
-        outdir = typer.prompt(
-            "Output folder",
-            default="fungalflye_compare"
-        )
+                outdir = typer.prompt(
+                    "Output folder",
+                    default="fungalflye_compare"
+                )
 
-        if typer.confirm("Run SNP detection?", default=True):
-            run_snp_analysis(reference, query, outdir)
+                if typer.confirm("Run SNP detection?", default=True):
+                    run_snp_analysis(reference, query, outdir)
 
-        if typer.confirm("Generate dotplot?", default=True):
-            run_dotplot(reference, query, outdir)
+                if typer.confirm("Generate dotplot?", default=True):
+                    run_dotplot(reference, query, outdir)
 
-        again = typer.prompt(
-            "\nRun another comparison?\n1 Yes\n2 No",
-            default="2"
-        )
+                again = typer.confirm("\nRun another comparison?", default=False)
 
-        if again != "1":
-            break
+                if not again:
+                    break
 
-    return
+            return
 
         # ------------------------------------------------
-        # ASSEMBLY / FULL
+        # ASSEMBLY / FULL PIPELINE
         # ------------------------------------------------
 
         reads = typer.prompt(
@@ -179,8 +172,8 @@ def wizard():
         Path(outdir).mkdir(exist_ok=True)
 
         if (Path(outdir) / "final.fasta").exists():
-            typer.echo("\n⚠️ Existing assembly detected in output folder.")
-            typer.echo("Pipeline will automatically resume from the last completed step.\n")
+            typer.echo("\n⚠️ Existing assembly detected.")
+            typer.echo("Pipeline will resume from last completed step.\n")
 
         typer.echo("\n🧾 Plan:")
         typer.echo(f"Reads: {reads}")
@@ -223,7 +216,7 @@ def wizard():
         )
 
         min_contig_size = typer.prompt(
-            "Minimum contig size to keep after pruning (bp)",
+            "Minimum contig size after pruning (bp)",
             default=20000,
             type=int
         )
