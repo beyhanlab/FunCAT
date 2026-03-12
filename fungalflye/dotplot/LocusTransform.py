@@ -19,7 +19,7 @@
 
 from bisect import bisect_left
 
-from Locus import Locus, spanningLocus
+from .Locus import Locus, spanningLocus
 
 class LocusTransform:
     """A transform between two sequence coordinate spaces.
