@@ -1,20 +1,23 @@
 import typer
 import subprocess
 from pathlib import Path
+from typing import Optional
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from .assemble import run_assembly
+from .assemble import run_assembly, READ_TYPE_CONFIGS
 from .qc import run_qc
 from .compare import run_snp_analysis
 from .dotplot_run import run_dotplot
 
-app = typer.Typer(help="FungalFlye Long-read fungal genome assembly toolkit")
+app = typer.Typer(help="FungalFlye — long-read fungal genome assembly toolkit")
 
 
 # ------------------------------------------------
 # helper runner
 # ------------------------------------------------
+
 def run(cmd):
     print(f"\n[fungalflye] Running: {cmd}\n")
     subprocess.run(cmd, shell=True, check=True)
@@ -23,6 +26,7 @@ def run(cmd):
 # ------------------------------------------------
 # read length analysis
 # ------------------------------------------------
+
 def analyze_reads(reads, outdir):
 
     outdir = Path(outdir)
@@ -38,7 +42,6 @@ def analyze_reads(reads, outdir):
     total_reads = len(lengths)
     total_bases = lengths.sum()
 
-    # calculate N50
     sorted_lengths = sorted(lengths, reverse=True)
     cumsum = 0
     n50 = 0
@@ -49,7 +52,6 @@ def analyze_reads(reads, outdir):
             n50 = L
             break
 
-    # histogram
     plt.figure(figsize=(6, 4))
     plt.hist(lengths, bins=100)
     plt.xlabel("Read length (bp)")
@@ -57,6 +59,7 @@ def analyze_reads(reads, outdir):
     plt.title("Read length distribution")
     plt.tight_layout()
     plt.savefig(outdir / "read_length_histogram.png")
+    plt.close()
 
     return total_reads, total_bases, n50, lengths
 
@@ -64,29 +67,50 @@ def analyze_reads(reads, outdir):
 # ------------------------------------------------
 # filtering preview
 # ------------------------------------------------
-def preview_filter(lengths, cutoff):
 
+def preview_filter(lengths, cutoff):
     kept = lengths[lengths >= cutoff]
     removed = lengths[lengths < cutoff]
-
     return len(kept), len(removed)
 
 
 # ------------------------------------------------
 # Assembly command
 # ------------------------------------------------
+
 @app.command()
 def assemble(
-    reads: str,
-    gsize: str,
-    outdir: str = "fungalflye_out",
-    threads: int = 8,
-    min_read_len: int = 0,
-    downsample_cov: int = 0,
-    min_contig_size: int = 20000
+    reads: str = typer.Argument(..., help="Path to input reads (FASTQ/FASTQ.gz)"),
+    gsize: str = typer.Argument(..., help="Estimated genome size, e.g. 40m, 1.2g"),
+    outdir: str = typer.Option("fungalflye_out", help="Output directory"),
+    threads: int = typer.Option(8, help="Number of CPU threads"),
+    min_read_len: int = typer.Option(0, help="Minimum read length filter (0 = off)"),
+    downsample_cov: int = typer.Option(0, help="Downsample to this coverage depth (0 = off)"),
+    min_contig_size: int = typer.Option(5000, help="Minimum contig size to keep after pruning"),
+    read_type: str = typer.Option(
+        "nano-hq",
+        help="Read type: nano-hq | nano-raw | pacbio-hifi",
+    ),
+    ploidy: str = typer.Option(
+        "haploid",
+        help="Ploidy mode: haploid | diploid. Diploid enables --keep-haplotypes in Flye.",
+    ),
+    asm_coverage: int = typer.Option(
+        60,
+        help="Target coverage for Flye assembly (--asm-coverage)",
+    ),
 ):
     """
-    Run full FungalFlye assembly pipeline
+    Run the full FungalFlye assembly pipeline.
+
+    Read types:
+      nano-hq      Nanopore HQ reads (R10.4+, Q20) — uses Medaka polishing
+      nano-raw     Nanopore raw reads (R9.4, standard) — uses Medaka polishing
+      pacbio-hifi  PacBio HiFi / CCS reads — uses Racon polishing
+
+    Ploidy:
+      haploid   Most filamentous fungi (Aspergillus, Neurospora, Fusarium...)
+      diploid   Diploid/heterozygous species (Histoplasma, Candida, Cryptococcus...)
     """
 
     final = run_assembly(
@@ -96,171 +120,120 @@ def assemble(
         threads=threads,
         min_read_len=min_read_len,
         downsample_cov=downsample_cov,
-        min_contig_size=min_contig_size
+        min_contig_size=min_contig_size,
+        read_type=read_type,
+        ploidy=ploidy,
+        asm_coverage=asm_coverage,
     )
 
     typer.echo(f"\n✅ Final assembly: {final}\n")
 
 
 # ------------------------------------------------
-# QC
+# QC — telomere bug fixed: run_telomeres now
+# exposed and correctly forwarded
 # ------------------------------------------------
+
 @app.command()
 def qc(
-    fasta: str,
-    telomere: str | None = None
+    fasta: str = typer.Argument(..., help="Path to assembly FASTA"),
+    telomere: Optional[str] = typer.Option(
+        None, help="Telomere motif sequence (e.g. TTAGGG). Auto-discovered if omitted."
+    ),
+    run_telomeres: bool = typer.Option(
+        True, help="Run telomere analysis (default: on)"
+    ),
 ):
     """
-    Run assembly QC and telomere analysis
+    Run assembly QC: contig stats, length histogram, and telomere analysis.
     """
-    run_qc(fasta, telomere)
+    run_qc(fasta, telomere=telomere, run_telomeres=run_telomeres)
 
 
 # ------------------------------------------------
 # SNP comparison
 # ------------------------------------------------
+
 @app.command()
 def snps(
-    reference: str,
-    query: str,
-    outdir: str = "fungalflye_snps"
+    reference: str = typer.Argument(..., help="Reference genome FASTA"),
+    query: str = typer.Argument(..., help="Query genome FASTA"),
+    outdir: str = typer.Option("fungalflye_snps", help="Output directory"),
 ):
     """
-    Detect SNPs between two genomes
+    Detect SNPs between two genome assemblies using NUCmer.
     """
-
     run_snp_analysis(reference, query, outdir)
 
 
 # ------------------------------------------------
 # Dotplot
 # ------------------------------------------------
+
 @app.command()
 def dotplot(
-    reference: str,
-    query: str,
-    outdir: str = "fungalflye_dotplots"
+    reference: str = typer.Argument(..., help="Reference genome FASTA"),
+    query: str = typer.Argument(..., help="Query genome FASTA"),
+    outdir: str = typer.Option("fungalflye_dotplots", help="Output directory"),
 ):
     """
-    Generate genome dotplot
+    Generate a whole-genome dotplot between two assemblies.
     """
-
     run_dotplot(reference, query, outdir)
 
 
 # ------------------------------------------------
-# Batch comparisons
+# Batch comparisons — parallelised
 # ------------------------------------------------
+
+def _compare_pair(args):
+    g1, g2, outdir = args
+    pair_name = f"{g1.stem}_vs_{g2.stem}"
+    pair_dir = outdir / pair_name
+    pair_dir.mkdir(exist_ok=True)
+    run_snp_analysis(g1, g2, pair_dir)
+    run_dotplot(g1, g2, pair_dir)
+    return pair_name
+
+
 @app.command()
 def compare_folder(
-    folder: str,
-    outdir: str = "fungalflye_comparisons"
+    folder: str = typer.Argument(..., help="Folder containing genome FASTA files"),
+    outdir: str = typer.Option("fungalflye_comparisons", help="Output directory"),
+    threads: int = typer.Option(4, help="Parallel comparison workers"),
 ):
     """
-    Run SNP + dotplot comparisons for all genome pairs in a folder
+    Run SNP + dotplot comparisons for all genome pairs in a folder (parallelised).
     """
 
     folder = Path(folder)
     genomes = list(folder.glob("*.fasta")) + list(folder.glob("*.fa"))
 
     if len(genomes) < 2:
-        typer.echo("Need at least two genomes")
+        typer.echo("Need at least two genomes in the folder.")
         raise typer.Exit()
 
     outdir = Path(outdir)
     outdir.mkdir(exist_ok=True)
 
-    typer.echo(f"\nFound {len(genomes)} genomes\n")
+    pairs = [
+        (genomes[i], genomes[j], outdir)
+        for i in range(len(genomes))
+        for j in range(i + 1, len(genomes))
+    ]
 
-    for i in range(len(genomes)):
-        for j in range(i + 1, len(genomes)):
+    typer.echo(f"\nFound {len(genomes)} genomes → {len(pairs)} pairs\n")
 
-            g1 = genomes[i]
-            g2 = genomes[j]
-
-            pair_name = f"{g1.stem}_vs_{g2.stem}"
-
-            typer.echo(f"\n🧬 Comparing {pair_name}\n")
-
-            pair_dir = outdir / pair_name
-            pair_dir.mkdir(exist_ok=True)
-
-            run_snp_analysis(g1, g2, pair_dir)
-            run_dotplot(g1, g2, pair_dir)
+    with ProcessPoolExecutor(max_workers=threads) as pool:
+        futures = {pool.submit(_compare_pair, p): p for p in pairs}
+        for fut in as_completed(futures):
+            try:
+                name = fut.result()
+                typer.echo(f"  ✅ {name}")
+            except Exception as exc:
+                typer.echo(f"  ❌ {futures[fut][0].stem}_vs_{futures[fut][1].stem}: {exc}")
 
     typer.echo("\n🎉 All comparisons finished\n")
-
-
-# ------------------------------------------------
-# INTERACTIVE MODE
-# ------------------------------------------------
-@app.command()
-def interactive():
-
-    typer.echo("\n🧬 Welcome to FungalFlye")
-    typer.echo("Long-read fungal genome assembly assistant\n")
-
-    reads = typer.prompt("Enter path to Nanopore reads")
-    gsize_input = typer.prompt("Estimated genome size (e.g. 40m)")
-    threads = typer.prompt("Threads", default=8)
-    outdir = typer.prompt("Output directory", default="fungalflye_out")
-
-    Path(outdir).mkdir(exist_ok=True)
-
-    typer.echo("\n🔎 Analyzing read lengths...\n")
-
-    total_reads, total_bases, read_n50, lengths = analyze_reads(reads, outdir)
-
-    gsize_numeric = gsize_input.lower().replace("m", "000000")
-    gsize_numeric = int(gsize_numeric)
-
-    coverage = total_bases / gsize_numeric
-
-    typer.echo(f"Total reads: {total_reads:,}")
-    typer.echo(f"Total bases: {total_bases:,}")
-    typer.echo(f"Read N50: {read_n50:,} bp")
-    typer.echo(f"Estimated coverage: {coverage:.1f}×")
-
-    suggested_cutoff = int(read_n50 * 0.7)
-
-    typer.echo(f"\nSuggested minimum read length: {suggested_cutoff} bp")
-
-    apply_filter = typer.confirm("Apply read filtering?", default=True)
-
-    filtered_reads = reads
-
-    if apply_filter:
-
-        cutoff = typer.prompt(
-            "Minimum read length",
-            default=suggested_cutoff
-        )
-
-        kept, removed = preview_filter(lengths, cutoff)
-
-        typer.echo(f"\nReads kept: {kept:,}")
-        typer.echo(f"Reads removed: {removed:,}")
-
-        confirm = typer.confirm("Continue with filtering?", default=True)
-
-        if confirm:
-
-            filtered_reads = f"{outdir}/filtered.fastq"
-
-            run(
-                f"seqkit seq -m {cutoff} {reads} > {filtered_reads}"
-            )
-
-    typer.echo("\n🚀 Starting assembly pipeline\n")
-
-    assemble(
-        reads=filtered_reads,
-        gsize=gsize_input,
-        outdir=outdir,
-        threads=threads
-    )
-
-    typer.echo("\n🎉 Pipeline complete!\n")
 
 
 if __name__ == "__main__":

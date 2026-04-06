@@ -262,13 +262,13 @@ def print_assembly_report(fasta, lengths, telo_df=None):
     print("🧬 FungalFlye Assembly Report")
     print("=" * 60)
 
-    print(f"\nAssembly file: {fasta}\n")
+    print(f"\nAssembly file : {fasta}\n")
 
-    print(f"Contigs:                {contigs}")
-    print(f"Total size:             {total_size:,} bp")
-    print(f"Largest contig:         {largest:,} bp")
-    print(f"N50:                    {n50:,} bp")
-    print(f"L50:                    {l50}")
+    print(f"Contigs       : {contigs}")
+    print(f"Total size    : {total_size:,} bp")
+    print(f"Largest contig: {largest:,} bp")
+    print(f"N50           : {n50:,} bp")
+    print(f"L50           : {l50}")
 
     if telo_df is not None:
 
@@ -283,16 +283,16 @@ def print_assembly_report(fasta, lengths, telo_df=None):
 
         density = telo_df["density_per_kb"].mean()
 
-        print(f"\nTelomeric ends:         {telomeric} / {total_ends}")
-        print(f"Chromosomes complete:   {both}")
-        print(f"Mean telomere density:  {density:.2f} hits/kb")
+        print(f"\nTelomeric ends      : {telomeric} / {total_ends}")
+        print(f"Chromosomes complete: {both}")
+        print(f"Mean telomere density: {density:.2f} hits/kb")
 
     print("\n" + "=" * 60)
 
     if contigs <= 12:
         print("✅ Assembly appears chromosome-level complete")
     else:
-        print("⚠️ Assembly fragmented — consider tuning parameters")
+        print("⚠️  Assembly fragmented — consider tuning parameters")
 
     print("=" * 60 + "\n")
 
@@ -332,16 +332,16 @@ def run_qc(fasta, telomere=None, run_telomeres=False):
 
     telo_df = None
 
-    if run_telomeres and telomere:
+    if run_telomeres:
+
+        if telomere is None:
+            telomere = discover_telomere_motif(str(fasta))
 
         print(f"\n[fungalflye] Scanning telomeres using motif: {telomere}")
 
-        telo_df = scan_telomeres(fasta, telomere)
+        telo_df = scan_telomeres(str(fasta), telomere)
 
         telo_df.to_csv(outdir / "telomeres.tsv", sep="\t", index=False)
-
-    elif run_telomeres:
-        print("\n[fungalflye] WARNING: Telomere scan requested but motif missing")
 
     print_assembly_report(fasta, lengths, telo_df)
 
