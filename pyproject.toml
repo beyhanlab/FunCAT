@@ -1,24 +1,41 @@
 [build-system]
-requires = ["setuptools>=61"]
-build-backend = "setuptools.build_meta"
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "fungalflye"
-version = "0.1.0"
-description = "Long-read fungal genome assembly pipeline"
-authors = [{name = "Jacob Durazo"}]
+version = "0.2.0"
+description = "Long-read fungal genome assembly toolkit built on Flye and Medaka"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Beyhan Lab", email = "beyhanlab@example.com" }
+]
+keywords = ["bioinformatics", "genomics", "fungi", "assembly", "nanopore", "pacbio"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "Intended Audience :: Science/Research",
+]
 
 dependencies = [
-    "typer",
-    "pandas",
-    "numpy",
-    "matplotlib",
-    "biopython",
-    "decorator"
+  "typer>=0.9",
+  "biopython>=1.81",
+  "pandas>=1.5",
+  "matplotlib>=3.6",
 ]
 
 [project.scripts]
-fungalflye = "fungalflye.wizard:wizard"
-FungalFlye = "fungalflye.wizard:wizard"
+fungalflye        = "fungalflye.cli:app"
+fungalflye-wizard = "fungalflye.wizard:app"
+
+[project.urls]
+Homepage   = "https://github.com/beyhanlab/FungalFlye"
+Repository = "https://github.com/beyhanlab/FungalFlye"
+Issues     = "https://github.com/beyhanlab/FungalFlye/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fungalflye*"]
