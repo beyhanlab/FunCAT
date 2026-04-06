@@ -3,7 +3,7 @@ import os
 import time
 import typer
 
-from .assemble import run_assembly, READ_TYPE_CONFIGS
+from .assemble import run_assembly, READ_TYPE_CONFIGS, DEFAULT_ENHANCEMENTS
 from .qc import run_qc, discover_telomere_motif
 from .cli import analyze_reads, preview_filter
 from .compare import run_snp_analysis
@@ -24,6 +24,39 @@ SNP detection, and genome dotplot support
 ============================================================
 """
 
+ENHANCEMENT_MENU = {
+    "adaptive_params": {
+        "label": "Adaptive Flye parameters",
+        "desc":  "Analyses your reads and auto-tunes Flye settings",
+        "default": True,
+        "time":  "< 1 min",
+    },
+    "iterative_polish": {
+        "label": "Iterative Medaka polishing",
+        "desc":  "Polishes up to 3 rounds, stops when assembly converges",
+        "default": True,
+        "time":  "+30–60 min",
+    },
+    "purge_dups": {
+        "label": "Purge Duplicates  [diploid only]",
+        "desc":  "Removes haplotig duplicates — dramatically improves diploid assemblies",
+        "default": False,
+        "time":  "+15 min",
+    },
+    "scaffolding": {
+        "label": "Repeat-aware scaffolding",
+        "desc":  "Uses long reads to bridge contig gaps at repeat boundaries",
+        "default": False,
+        "time":  "+20–40 min",
+    },
+    "confidence_scoring": {
+        "label": "Contig confidence scoring",
+        "desc":  "Flags suspicious contigs (collapsed repeats, contamination)",
+        "default": True,
+        "time":  "+5 min",
+    },
+}
+
 
 def path_exists(p: str) -> str:
     p2 = os.path.expanduser(p.strip())
@@ -36,9 +69,7 @@ def normalize_gsize(g: str) -> str:
     g = g.strip().lower()
     if g.isdigit():
         val = int(g)
-        if val < 1000:
-            return f"{val}m"
-        return str(val)
+        return f"{val}m" if val < 1000 else str(val)
     return g
 
 
@@ -51,7 +82,7 @@ def get_read_type() -> str:
     try:
         return keys[int(choice.strip()) - 1]
     except (ValueError, IndexError):
-        typer.echo("Invalid choice, defaulting to nano-hq")
+        typer.echo("Invalid — defaulting to nano-hq")
         return "nano-hq"
 
 
@@ -61,6 +92,80 @@ def get_ploidy() -> str:
     typer.echo("  2) Diploid  — heterozygous species (Histoplasma, Candida, Cryptococcus...)")
     choice = typer.prompt("Enter choice", default="1")
     return "diploid" if choice.strip() == "2" else "haploid"
+
+
+def get_enhancements(ploidy: str) -> dict:
+    """
+    Interactive feature selection menu.
+    Returns dict of {feature_key: bool}.
+    """
+    keys   = list(ENHANCEMENT_MENU.keys())
+    active = {k: ENHANCEMENT_MENU[k]["default"] for k in keys}
+
+    # Purge dups only available for diploid
+    if ploidy == "haploid":
+        active["purge_dups"] = False
+
+    while True:
+        typer.echo("\n" + "=" * 60)
+        typer.echo("⚙️   Enhancement modules — choose what to run")
+        typer.echo("=" * 60)
+
+        for i, key in enumerate(keys, 1):
+            m = ENHANCEMENT_MENU[key]
+            status = "ON " if active[key] else "off"
+
+            # Grey out purge_dups for haploid
+            if key == "purge_dups" and ploidy == "haploid":
+                typer.echo(
+                    f"  -) [{status}]  {m['label']}  "
+                    f"(not available for haploid)"
+                )
+            else:
+                typer.echo(
+                    f"  {i}) [{status}]  {m['label']}  "
+                    f"({m['time']})  — {m['desc']}"
+                )
+
+        typer.echo("\n  A) Select all")
+        typer.echo("  D) Use recommended defaults  [adaptive + iterative polish + confidence]")
+        typer.echo("  C) Continue with current selection")
+
+        choice = typer.prompt("\nEnter number to toggle, or A / D / C", default="C").strip().upper()
+
+        if choice == "C":
+            break
+
+        if choice == "A":
+            for k in keys:
+                if not (k == "purge_dups" and ploidy == "haploid"):
+                    active[k] = True
+            typer.echo("✅ All modules selected")
+            continue
+
+        if choice == "D":
+            active = {k: ENHANCEMENT_MENU[k]["default"] for k in keys}
+            if ploidy == "haploid":
+                active["purge_dups"] = False
+            typer.echo("✅ Defaults restored")
+            continue
+
+        try:
+            idx = int(choice) - 1
+            key = keys[idx]
+            if key == "purge_dups" and ploidy == "haploid":
+                typer.echo("⚠️  Purge Duplicates is only available for diploid assemblies")
+            else:
+                active[key] = not active[key]
+                state = "ON" if active[key] else "off"
+                typer.echo(f"  → {ENHANCEMENT_MENU[key]['label']} set to {state}")
+        except (ValueError, IndexError):
+            typer.echo("Invalid choice — enter a number, A, D, or C")
+
+    active_names = [ENHANCEMENT_MENU[k]["label"] for k, v in active.items() if v]
+    typer.echo(f"\n✅ Running with: {', '.join(active_names) if active_names else 'no enhancements'}")
+
+    return active
 
 
 def get_telomere_setup():
@@ -98,70 +203,61 @@ def wizard():
 
         mode = typer.prompt("Enter choice", default="1")
 
-        # EXIT
         if mode == "5":
             typer.echo("\nGoodbye 🐉\n")
             return
 
-        # INVALID
         if mode not in ("1", "2", "3", "4"):
             typer.echo("Invalid choice — please enter 1–5.")
             continue
 
-        # ------------------------------------------------
         # QC ONLY
-        # ------------------------------------------------
         if mode == "3":
             fasta = typer.prompt("Path to assembly FASTA", value_proc=path_exists)
             run_telomeres, tel_motif, auto_tel = get_telomere_setup()
-
             if not typer.confirm("\nReady to run QC — continue?", default=True):
                 abort()
                 continue
-
             typer.echo("\n📊 Running QC...\n")
             if run_telomeres and auto_tel:
                 tel_motif = discover_telomere_motif(fasta)
             run_qc(fasta, telomere=tel_motif, run_telomeres=run_telomeres)
             typer.echo("\n🎉 QC complete.\n")
-
             if not typer.confirm("Run another workflow?", default=False):
                 return
             continue
 
-        # ------------------------------------------------
-        # GENOME COMPARISON MODE
-        # ------------------------------------------------
+        # COMPARE
         if mode == "4":
             while True:
                 reference = typer.prompt("Reference genome", value_proc=path_exists)
-                query = typer.prompt("Query genome", value_proc=path_exists)
-                outdir = typer.prompt("Output folder", default="fungalflye_compare")
-
+                query     = typer.prompt("Query genome",     value_proc=path_exists)
+                outdir    = typer.prompt("Output folder", default="fungalflye_compare")
                 if not typer.confirm("\nReady to compare — continue?", default=True):
                     abort()
                     break
-
                 if typer.confirm("Run SNP detection?", default=True):
                     run_snp_analysis(reference, query, outdir)
                 if typer.confirm("Generate dotplot?", default=True):
                     run_dotplot(reference, query, outdir)
                 if not typer.confirm("\nRun another comparison?", default=False):
                     break
-
             if not typer.confirm("Run another workflow?", default=False):
                 return
             continue
 
-        # ------------------------------------------------
-        # ASSEMBLY / FULL PIPELINE  (modes 1 and 2)
-        # ------------------------------------------------
-        reads = typer.prompt("Path to raw reads", value_proc=path_exists)
-        gsize = normalize_gsize(typer.prompt("Genome size (e.g. 40m, 1.2g)", default="40m"))
+        # ASSEMBLY / FULL PIPELINE
+        reads  = typer.prompt("Path to raw reads", value_proc=path_exists)
+        gsize  = normalize_gsize(typer.prompt("Genome size (e.g. 40m, 1.2g)", default="40m"))
         outdir = typer.prompt("Output folder", default="fungalflye_out")
         threads = typer.prompt("Threads", default=8, type=int)
+
         read_type = get_read_type()
-        ploidy = get_ploidy()
+        ploidy    = get_ploidy()
+
+        # Enhancement selection
+        enhancements = get_enhancements(ploidy)
+
         asm_coverage = typer.prompt("Flye assembly coverage target", default=60, type=int)
 
         Path(outdir).mkdir(exist_ok=True)
@@ -181,7 +277,6 @@ def wizard():
             abort()
             continue
 
-        # Step 1 — read diagnostics
         typer.echo("\n🔎 Step 1 — Read diagnostics\n")
         total_reads, total_bases, read_n50, lengths = analyze_reads(reads, outdir)
         typer.echo(f"Total reads : {total_reads:,}")
@@ -197,26 +292,24 @@ def wizard():
             kept, removed = preview_filter(lengths, cutoff)
             typer.echo(f"\nReads kept    : {kept:,}")
             typer.echo(f"Reads removed : {removed:,}")
-
-            # BUG FIX: saying no here now returns to main menu instead of continuing
             if not typer.confirm("Confirm these filter settings?", default=True):
                 abort()
                 continue
-
             min_read_len = cutoff
 
-        downsample_cov = typer.prompt("Downsample coverage? (0 = none)", default=0, type=int)
-        min_contig_size = typer.prompt("Minimum contig size after pruning (bp)", default=5000, type=int)
+        downsample_cov  = typer.prompt("Downsample coverage? (0 = none)", default=0, type=int)
+        min_contig_size = typer.prompt("Minimum contig size (bp)", default=5000, type=int)
+
         run_telomeres, tel_motif, auto_tel = get_telomere_setup()
 
-        # Final pre-launch summary
         typer.echo("\n" + "=" * 60)
         typer.echo("Ready to assemble:")
         typer.echo(f"  Read filter   : {min_read_len} bp min" if min_read_len else "  Read filter   : off")
         typer.echo(f"  Downsample    : {downsample_cov}x" if downsample_cov else "  Downsample    : off")
         typer.echo(f"  Contig cutoff : {min_contig_size} bp")
         typer.echo(f"  Ploidy        : {ploidy}")
-        typer.echo(f"  Polisher      : {'Medaka' if READ_TYPE_CONFIGS[read_type]['medaka_model'] else 'Racon'}")
+        active_mods = [ENHANCEMENT_MENU[k]["label"] for k, v in enhancements.items() if v]
+        typer.echo(f"  Modules       : {', '.join(active_mods) if active_mods else 'none'}")
         typer.echo("=" * 60)
 
         if not typer.confirm("\nLaunch assembly?", default=True):
@@ -237,6 +330,7 @@ def wizard():
             read_type=read_type,
             ploidy=ploidy,
             asm_coverage=asm_coverage,
+            enhancements=enhancements,
         )
 
         if mode == "1" and typer.confirm("\nAssembly finished — run QC?", default=True):

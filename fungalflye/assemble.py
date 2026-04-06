@@ -5,6 +5,14 @@ import shutil as sh
 import json
 from Bio import SeqIO
 
+from .enhance import (
+    suggest_flye_params,
+    run_medaka_iterative,
+    run_purge_dups,
+    score_contig_confidence,
+)
+from .scaffold import run_scaffold
+
 
 # ------------------------------------------------
 # Read type config
@@ -31,9 +39,18 @@ READ_TYPE_CONFIGS = {
     },
 }
 
+# Default enhancement feature set
+DEFAULT_ENHANCEMENTS = {
+    "adaptive_params":    True,
+    "iterative_polish":   True,
+    "purge_dups":         False,   # only meaningful for diploid
+    "confidence_scoring": True,
+    "scaffolding":        False,   # opt-in (adds time)
+}
+
 
 # ------------------------------------------------
-# helper runner
+# helpers
 # ------------------------------------------------
 
 def run(cmd):
@@ -41,12 +58,7 @@ def run(cmd):
     subprocess.run(cmd, shell=True, check=True)
 
 
-# ------------------------------------------------
-# genome size parser (handles 40m, 40M, 1g, 1G, raw bp)
-# ------------------------------------------------
-
 def parse_genome_size(g):
-    """Return genome size in base pairs as an integer."""
     g = str(g).strip().lower()
     if g.endswith("g"):
         return int(float(g[:-1]) * 1_000_000_000)
@@ -57,38 +69,29 @@ def parse_genome_size(g):
     return int(g)
 
 
-# ------------------------------------------------
-# dependency check
-# ------------------------------------------------
-
-def check_dependencies(read_type="nano-hq", use_medaka=True):
+def check_dependencies(read_type="nano-hq", enhancements=None):
+    if enhancements is None:
+        enhancements = DEFAULT_ENHANCEMENTS
 
     tools = ["flye", "minimap2", "seqkit", "filtlong"]
 
-    if use_medaka and READ_TYPE_CONFIGS[read_type]["medaka_model"] is not None:
+    cfg = READ_TYPE_CONFIGS[read_type]
+    if cfg["medaka_model"]:
         tools.append("medaka_consensus")
     else:
         tools.append("racon")
 
-    missing = []
-
-    for t in tools:
-        if sh.which(t) is None:
-            missing.append(t)
+    missing = [t for t in tools if sh.which(t) is None]
 
     if missing:
         print("\n❌ Missing required tools:")
         for m in missing:
             print(f"  - {m}")
-
         print("\nInstall with:")
         print("  conda install -c bioconda flye minimap2 seqkit filtlong")
         if "medaka_consensus" in missing:
             print("  pip install medaka")
-        if "racon" in missing:
-            print("  conda install -c bioconda racon")
         print()
-
         raise SystemExit(1)
 
 
@@ -96,176 +99,117 @@ def check_dependencies(read_type="nano-hq", use_medaka=True):
 # pruning helpers
 # ------------------------------------------------
 
-def write_prune_settings(settings_path, settings_dict):
-    with open(settings_path, "w") as fh:
-        json.dump(settings_dict, fh, indent=2)
+def write_prune_settings(path, d):
+    with open(path, "w") as f:
+        json.dump(d, f, indent=2)
 
 
-def load_prune_settings(settings_path):
-    if not Path(settings_path).exists():
+def load_prune_settings(path):
+    if not Path(path).exists():
         return None
-    with open(settings_path) as fh:
-        return json.load(fh)
+    with open(path) as f:
+        return json.load(f)
 
 
-def prune_contained_contigs(
-    fasta,
-    out_fasta,
-    threads=8,
-    min_identity=0.95,
-    min_coverage=0.95
-):
-
-    print(
-        f"\n[fungalflye] Pruning contained contigs "
-        f"(identity >= {min_identity}, coverage >= {min_coverage})\n"
-    )
-
-    fasta = Path(fasta)
-    out_fasta = Path(out_fasta)
-
+def prune_contained_contigs(fasta, out_fasta, threads=8,
+                             min_identity=0.95, min_coverage=0.95):
+    print(f"\n[fungalflye] Pruning contained contigs "
+          f"(identity>={min_identity}, coverage>={min_coverage})\n")
+    fasta, out_fasta = Path(fasta), Path(out_fasta)
     paf = out_fasta.with_suffix(".self.paf")
-
-    # asm5 is correct for self-alignment contained-contig detection
     run(f"minimap2 -x asm5 -t {threads} {fasta} {fasta} > {paf}")
-
     remove = set()
-
     with open(paf) as f:
         for line in f:
             cols = line.strip().split()
-
-            q = cols[0]
-            t = cols[5]
-
+            q, t = cols[0], cols[5]
             if q == t:
                 continue
-
-            qlen = int(cols[1])
-            tlen = int(cols[6])
-
-            matches = int(cols[9])
-            aln_len = int(cols[10])
-
+            qlen, tlen = int(cols[1]), int(cols[6])
+            matches, aln_len = int(cols[9]), int(cols[10])
             identity = matches / aln_len if aln_len > 0 else 0
-            # cap coverage at 1.0 to avoid false positives from indels
             coverage = min(aln_len / qlen, 1.0) if qlen > 0 else 0
-
-            if identity >= min_identity and coverage >= min_coverage:
-                if qlen < tlen:
-                    remove.add(q)
-
-    kept_records = []
-    removed_count = 0
-
-    for record in SeqIO.parse(str(fasta), "fasta"):
-        if record.id in remove:
+            if identity >= min_identity and coverage >= min_coverage and qlen < tlen:
+                remove.add(q)
+    kept, removed_count = [], 0
+    for r in SeqIO.parse(str(fasta), "fasta"):
+        if r.id in remove:
             removed_count += 1
         else:
-            kept_records.append(record)
-
-    SeqIO.write(kept_records, str(out_fasta), "fasta")
-
+            kept.append(r)
+    SeqIO.write(kept, str(out_fasta), "fasta")
     paf.unlink(missing_ok=True)
-
     print(f"[fungalflye] Removed {removed_count} contained contigs")
-
     return removed_count
 
 
 def prune_small_contigs(fasta, out_fasta, min_size=5000):
-
-    print(f"\n[fungalflye] Removing contigs smaller than {min_size} bp\n")
-
-    fasta = Path(fasta)
-    out_fasta = Path(out_fasta)
-
-    kept_records = []
-    removed_count = 0
-
-    for record in SeqIO.parse(str(fasta), "fasta"):
-        if len(record.seq) < min_size:
+    print(f"\n[fungalflye] Removing contigs < {min_size} bp\n")
+    fasta, out_fasta = Path(fasta), Path(out_fasta)
+    kept, removed_count = [], 0
+    for r in SeqIO.parse(str(fasta), "fasta"):
+        if len(r.seq) < min_size:
             removed_count += 1
         else:
-            kept_records.append(record)
-
-    SeqIO.write(kept_records, str(out_fasta), "fasta")
-
+            kept.append(r)
+    SeqIO.write(kept, str(out_fasta), "fasta")
     print(f"[fungalflye] Removed {removed_count} small contigs")
-
     return removed_count
 
 
 # ------------------------------------------------
-# Medaka polishing
+# AT-rich warning
 # ------------------------------------------------
 
-def run_medaka(assembly, reads, outdir, threads, model):
-    """Run Medaka consensus polishing. Returns path to polished FASTA."""
-
-    medaka_dir = outdir / "medaka"
-
-    polished = medaka_dir / "consensus.fasta"
-
-    if polished.exists():
-        print("[fungalflye] Existing Medaka polish detected — skipping")
-        return polished
-
-    print(f"\n[fungalflye] Running Medaka polishing (model: {model})\n")
-
-    medaka_dir.mkdir(exist_ok=True)
-
-    run(
-        f"medaka_consensus "
-        f"-i {reads} "
-        f"-d {assembly} "
-        f"-o {medaka_dir} "
-        f"-t {threads} "
-        f"-m {model}"
-    )
-
-    if not polished.exists():
-        raise RuntimeError("Medaka polishing failed — consensus.fasta not found")
-
-    return polished
+def _warn_if_at_rich(fasta, sample=3):
+    try:
+        total, gc = 0, 0
+        for i, r in enumerate(SeqIO.parse(str(fasta), "fasta")):
+            if i >= sample:
+                break
+            s = str(r.seq).upper()
+            total += len(s)
+            gc += s.count("G") + s.count("C")
+        if total > 0:
+            pct = 100 * gc / total
+            if pct < 35:
+                print(f"\n⚠️  Low GC content ({pct:.1f}%) — "
+                      "AT-rich genome detected. Consider --asm-coverage 80.\n")
+    except Exception:
+        pass
 
 
 # ------------------------------------------------
-# Racon polishing (fallback for PacBio HiFi or if medaka unavailable)
+# Mito separation
 # ------------------------------------------------
 
-def run_racon(assembly, reads, outdir, threads, minimap2_preset):
-    """Run one round of Racon polishing. Returns path to polished FASTA."""
-
-    paf = outdir / "reads.paf"
-    racon_fasta = outdir / "racon.fasta"
-
-    if racon_fasta.exists():
-        print("[fungalflye] Existing Racon polish detected — skipping")
-        return racon_fasta
-
-    print("\n[fungalflye] Mapping reads for Racon")
-
-    run(
-        f"minimap2 -x {minimap2_preset} -t {threads} "
-        f"{assembly} {reads} > {paf}"
-    )
-
-    print("\n[fungalflye] Running Racon polishing")
-
-    # Note: -t threads flag added
-    run(f"racon -t {threads} {reads} {paf} {assembly} > {racon_fasta}")
-
-    paf.unlink(missing_ok=True)
-
-    if not racon_fasta.exists():
-        raise RuntimeError("Racon polishing failed")
-
-    return racon_fasta
+def _separate_mito(polished_fasta, assembly_info, outdir):
+    mito_ids = set()
+    try:
+        with open(assembly_info) as f:
+            for line in f:
+                if line.startswith("#"):
+                    continue
+                parts = line.strip().split("\t")
+                if len(parts) < 4:
+                    continue
+                if parts[3].strip() == "Y" and 20_000 <= int(parts[1]) <= 100_000:
+                    mito_ids.add(parts[0])
+    except Exception:
+        return
+    if not mito_ids:
+        return
+    nuclear, mito = [], []
+    for r in SeqIO.parse(str(polished_fasta), "fasta"):
+        (mito if r.id in mito_ids else nuclear).append(r)
+    if mito:
+        SeqIO.write(nuclear, str(outdir / "nuclear.fasta"), "fasta")
+        SeqIO.write(mito,    str(outdir / "mitochondrial.fasta"), "fasta")
+        print(f"\n[fungalflye] Separated {len(mito)} mitochondrial contig(s)")
 
 
 # ------------------------------------------------
-# main assembly pipeline (RESUMABLE)
+# main assembly pipeline
 # ------------------------------------------------
 
 def run_assembly(
@@ -281,35 +225,31 @@ def run_assembly(
     read_type="nano-hq",
     ploidy="haploid",
     asm_coverage=60,
+    enhancements=None,
 ):
+    if enhancements is None:
+        enhancements = dict(DEFAULT_ENHANCEMENTS)
+
+    # Purge dups only makes sense for diploid
+    if ploidy == "haploid":
+        enhancements["purge_dups"] = False
 
     if read_type not in READ_TYPE_CONFIGS:
-        raise ValueError(
-            f"Unknown read_type '{read_type}'. "
-            f"Choose from: {list(READ_TYPE_CONFIGS)}"
-        )
+        raise ValueError(f"Unknown read_type '{read_type}'")
 
     cfg = READ_TYPE_CONFIGS[read_type]
-
-    # PacBio HiFi doesn't use Medaka — use Racon instead
-    use_medaka = (cfg["medaka_model"] is not None)
-
-    check_dependencies(read_type=read_type, use_medaka=use_medaka)
+    check_dependencies(read_type, enhancements)
 
     outdir = Path(outdir)
     outdir.mkdir(exist_ok=True)
-
     reads = Path(reads)
 
-    flye_dir = outdir / "flye"
-
-    filtered_reads = outdir / "reads.filtered.fastq"
+    flye_dir        = outdir / "flye"
+    filtered_reads  = outdir / "reads.filtered.fastq"
     downsampled_reads = outdir / "reads.downsampled.fastq"
-
     contained_fasta = outdir / "contained_pruned.fasta"
-    pruned_fasta = outdir / "pruned.fasta"
-    final_fasta = outdir / "final.fasta"
-
+    pruned_fasta    = outdir / "pruned.fasta"
+    final_fasta     = outdir / "final.fasta"
     prune_settings_path = outdir / "prune_settings.json"
 
     reads_used = reads
@@ -319,15 +259,12 @@ def run_assembly(
     print("=" * 60)
     print(f"Read type : {cfg['label']}")
     print(f"Ploidy    : {ploidy}")
-    print(f"Polisher  : {'Medaka' if use_medaka else 'Racon'}")
+    print(f"Polisher  : {'Medaka (iterative)' if cfg['medaka_model'] and enhancements.get('iterative_polish') else 'Medaka (1 round)' if cfg['medaka_model'] else 'Racon'}")
+    print(f"Enhancements active: {[k for k, v in enhancements.items() if v]}")
     print("=" * 60)
 
-    # ------------------------------------------------
     # FILTERING
-    # ------------------------------------------------
-
     if min_read_len > 0:
-
         if filtered_reads.exists():
             print("[fungalflye] Found filtered reads — skipping")
             reads_used = filtered_reads
@@ -336,151 +273,152 @@ def run_assembly(
             run(f"seqkit seq -m {min_read_len} {reads} > {filtered_reads}")
             reads_used = filtered_reads
 
-    # ------------------------------------------------
     # DOWNSAMPLING
-    # ------------------------------------------------
-
     if downsample_cov > 0:
-
         if downsampled_reads.exists():
             print("[fungalflye] Found downsampled reads — skipping")
             reads_used = downsampled_reads
         else:
-            print("\n[fungalflye] Downsampling reads")
-
             genome_bp = parse_genome_size(genome_size)
             target_bases = genome_bp * downsample_cov
-
-            run(
-                f"filtlong --min_length 1000 "
-                f"--target_bases {target_bases} "
-                f"{reads_used} > {downsampled_reads}"
-            )
-
+            run(f"filtlong --min_length 1000 --target_bases {target_bases} "
+                f"{reads_used} > {downsampled_reads}")
             reads_used = downsampled_reads
 
     if not reads_used.exists():
         raise RuntimeError("Reads missing after preprocessing")
 
-    # ------------------------------------------------
+    # MODULE 1 — Adaptive parameters
+    flye_params = {}
+    if enhancements.get("adaptive_params"):
+        genome_bp = parse_genome_size(genome_size)
+        flye_params = suggest_flye_params(reads_used, genome_bp, threads)
+        if "asm_coverage" in flye_params:
+            asm_coverage = flye_params["asm_coverage"]
+
     # FLYE
-    # ------------------------------------------------
-
     assembly = flye_dir / "assembly.fasta"
-
     if assembly.exists():
         print("[fungalflye] Existing Flye assembly detected — skipping")
     else:
-        print(f"\n[fungalflye] Running Flye assembly ({ploidy} mode)")
-
-        flye_cmd = (
+        print(f"\n[fungalflye] Running Flye ({ploidy} mode)")
+        min_overlap = flye_params.get("min_overlap", "")
+        iterations  = flye_params.get("iterations", 3)
+        overlap_flag = f"--min-overlap {min_overlap}" if min_overlap else ""
+        hap_flag = "--keep-haplotypes" if ploidy == "diploid" else ""
+        run(
             f"flye {cfg['flye_flag']} {reads_used} "
             f"--genome-size {genome_size} "
             f"--threads {threads} "
-            f"--iterations 3 "
+            f"--iterations {iterations} "
             f"--asm-coverage {asm_coverage} "
+            f"{overlap_flag} {hap_flag} "
             f"-o {flye_dir}"
         )
-
-        # Only keep haplotypes for diploid assemblies
-        if ploidy == "diploid":
-            flye_cmd += " --keep-haplotypes"
-
-        run(flye_cmd)
 
     if not assembly.exists():
         raise RuntimeError("Flye assembly failed")
 
-    # ------------------------------------------------
-    # GC WARNING for AT-rich genomes
-    # ------------------------------------------------
-
     _warn_if_at_rich(assembly)
 
-    # ------------------------------------------------
     # POLISHING
-    # ------------------------------------------------
-
-    if use_medaka:
-        polished_fasta = run_medaka(
-            assembly=assembly,
-            reads=reads_used,
-            outdir=outdir,
-            threads=threads,
-            model=cfg["medaka_model"],
-        )
+    if cfg["medaka_model"]:
+        if enhancements.get("iterative_polish"):
+            polished_fasta = run_medaka_iterative(
+                assembly=assembly,
+                reads=reads_used,
+                outdir=outdir,
+                threads=threads,
+                model=cfg["medaka_model"],
+                max_rounds=3,
+                convergence_threshold=50,
+            )
+        else:
+            # Single-round Medaka fallback
+            from .enhance import run_medaka_iterative as _med
+            polished_fasta = _med(
+                assembly=assembly, reads=reads_used, outdir=outdir,
+                threads=threads, model=cfg["medaka_model"],
+                max_rounds=1, convergence_threshold=0,
+            )
     else:
-        polished_fasta = run_racon(
-            assembly=assembly,
+        # PacBio — use Racon
+        paf = outdir / "reads.paf"
+        racon_fasta = outdir / "racon.fasta"
+        if not racon_fasta.exists():
+            run(f"minimap2 -x {cfg['minimap2_preset']} -t {threads} "
+                f"{assembly} {reads_used} > {paf}")
+            run(f"racon -t {threads} {reads_used} {paf} {assembly} > {racon_fasta}")
+            paf.unlink(missing_ok=True)
+        polished_fasta = racon_fasta
+
+    # MODULE 3 — Purge Duplicates
+    if enhancements.get("purge_dups") and ploidy == "diploid":
+        polished_fasta, _ = run_purge_dups(
+            assembly=polished_fasta,
             reads=reads_used,
             outdir=outdir,
             threads=threads,
             minimap2_preset=cfg["minimap2_preset"],
         )
 
-    # ------------------------------------------------
-    # MITO SEPARATION
-    # ------------------------------------------------
+    # MODULE 5 — Scaffolding
+    if enhancements.get("scaffolding"):
+        polished_fasta = run_scaffold(
+            assembly=polished_fasta,
+            reads=reads_used,
+            outdir=outdir,
+            threads=threads,
+            minimap2_preset=cfg["minimap2_preset"],
+            min_support=3,
+            end_window=2000,
+        )
 
+    # Mito separation
     assembly_info = flye_dir / "assembly_info.txt"
     if assembly_info.exists():
         _separate_mito(polished_fasta, assembly_info, outdir)
 
-    # ------------------------------------------------
     # PRUNING
-    # ------------------------------------------------
-
-    current_prune_settings = {
+    current_settings = {
         "min_contig_size": int(min_contig_size),
-        "prune_identity": float(prune_identity),
-        "prune_coverage": float(prune_coverage),
+        "prune_identity":  float(prune_identity),
+        "prune_coverage":  float(prune_coverage),
     }
-
-    old_prune_settings = load_prune_settings(prune_settings_path)
-
-    rerun_pruning = (
-        (not contained_fasta.exists())
-        or (not pruned_fasta.exists())
-        or (old_prune_settings != current_prune_settings)
+    old_settings = load_prune_settings(prune_settings_path)
+    rerun = (
+        not contained_fasta.exists()
+        or not pruned_fasta.exists()
+        or old_settings != current_settings
     )
-
-    if rerun_pruning:
-        print("\n[fungalflye] Running pruning workflow")
-
+    if rerun:
         prune_contained_contigs(
-            polished_fasta,
-            contained_fasta,
-            threads=threads,
-            min_identity=prune_identity,
-            min_coverage=prune_coverage,
+            polished_fasta, contained_fasta, threads, prune_identity, prune_coverage
         )
-
-        prune_small_contigs(
-            contained_fasta,
-            pruned_fasta,
-            min_size=min_contig_size,
-        )
-
-        write_prune_settings(prune_settings_path, current_prune_settings)
-
+        prune_small_contigs(contained_fasta, pruned_fasta, min_contig_size)
+        write_prune_settings(prune_settings_path, current_settings)
     else:
         print("[fungalflye] Existing pruned assembly with same settings — skipping")
 
-    # ------------------------------------------------
     # FINAL
-    # ------------------------------------------------
-
-    if final_fasta.exists():
-        if old_prune_settings != current_prune_settings:
-            shutil.copy(pruned_fasta, final_fasta)
-        else:
-            print("[fungalflye] Final assembly already exists")
-    else:
+    if final_fasta.exists() and old_settings != current_settings:
         shutil.copy(pruned_fasta, final_fasta)
+    elif not final_fasta.exists():
+        shutil.copy(pruned_fasta, final_fasta)
+    else:
+        print("[fungalflye] Final assembly already exists")
 
-    n_contigs = sum(
-        1 for line in open(final_fasta) if line.startswith(">")
-    )
+    # MODULE 4 — Confidence scoring
+    if enhancements.get("confidence_scoring"):
+        score_contig_confidence(
+            assembly=final_fasta,
+            reads=reads_used,
+            outdir=outdir,
+            threads=threads,
+            minimap2_preset=cfg["minimap2_preset"],
+        )
+
+    n_contigs = sum(1 for l in open(final_fasta) if l.startswith(">"))
 
     print("\n" + "=" * 60)
     print("✅ Assembly Complete")
@@ -488,85 +426,7 @@ def run_assembly(
     print(f"Final assembly : {final_fasta}")
     print(f"Contigs        : {n_contigs}")
     print(f"Contig cutoff  : {min_contig_size} bp")
-    print(f"Ploidy mode    : {ploidy}")
+    print(f"Ploidy         : {ploidy}")
     print("=" * 60 + "\n")
 
     return str(final_fasta)
-
-
-# ------------------------------------------------
-# AT-rich genome warning
-# ------------------------------------------------
-
-def _warn_if_at_rich(fasta, sample_contigs=3):
-    """Scan the first few contigs and warn if GC < 35%."""
-    try:
-        total, gc = 0, 0
-        for i, rec in enumerate(SeqIO.parse(str(fasta), "fasta")):
-            if i >= sample_contigs:
-                break
-            s = str(rec.seq).upper()
-            total += len(s)
-            gc += s.count("G") + s.count("C")
-        if total > 0:
-            gc_pct = 100 * gc / total
-            if gc_pct < 35:
-                print(
-                    f"\n⚠️  Low GC content detected ({gc_pct:.1f}%). "
-                    "AT-rich genomes may require adjusted Flye parameters. "
-                    "Consider --asm-coverage 80 or higher.\n"
-                )
-    except Exception:
-        pass
-
-
-# ------------------------------------------------
-# Mitochondrial contig separation
-# ------------------------------------------------
-
-def _separate_mito(polished_fasta, assembly_info, outdir):
-    """
-    Parse Flye assembly_info.txt and separate circular contigs
-    in the mito size range (20–100 kb) into a separate FASTA.
-    """
-    mito_ids = set()
-
-    try:
-        with open(assembly_info) as f:
-            for line in f:
-                if line.startswith("#"):
-                    continue
-                parts = line.strip().split("\t")
-                if len(parts) < 4:
-                    continue
-                name = parts[0]
-                length = int(parts[1])
-                circular = parts[3].strip() == "Y"
-                if circular and 20_000 <= length <= 100_000:
-                    mito_ids.add(name)
-    except Exception:
-        return
-
-    if not mito_ids:
-        return
-
-    nuclear_fasta = outdir / "nuclear.fasta"
-    mito_fasta = outdir / "mitochondrial.fasta"
-
-    nuclear = []
-    mito = []
-
-    for rec in SeqIO.parse(str(polished_fasta), "fasta"):
-        if rec.id in mito_ids:
-            mito.append(rec)
-        else:
-            nuclear.append(rec)
-
-    if mito:
-        SeqIO.write(nuclear, str(nuclear_fasta), "fasta")
-        SeqIO.write(mito, str(mito_fasta), "fasta")
-        print(
-            f"\n[fungalflye] Separated {len(mito)} putative mitochondrial "
-            f"contig(s) → {mito_fasta}"
-        )
-        print(f"[fungalflye] Nuclear contigs → {nuclear_fasta}\n")
