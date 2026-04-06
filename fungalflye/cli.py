@@ -14,7 +14,20 @@ from .compare import run_snp_analysis
 from .dotplot_run import run_dotplot
 from .report import generate_report
 
-app = typer.Typer(help="FungalFlye — long-read fungal genome assembly toolkit")
+def _default_wizard():
+    """Launch the wizard when fungalflye is run with no subcommand."""
+    from .wizard import wizard
+    wizard()
+
+app = typer.Typer(
+    help="FungalFlye — long-read fungal genome assembly toolkit",
+    invoke_without_command=True,
+)
+
+@app.callback()
+def main(ctx: typer.Context):
+    if ctx.invoked_subcommand is None:
+        _default_wizard()
 
 
 def run(cmd):
