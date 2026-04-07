@@ -18,13 +18,25 @@ BANNER = r"""
 Long-read fungal genome assembly toolkit
 Version 0.3  |  Beyhan Lab  |  J. Craig Venter Institute
 
-Chromosome-scale assemblies from Nanopore and PacBio reads
-with automated QC, telomere validation, and HTML reporting.
+FungalFlye takes raw Nanopore or PacBio HiFi reads and
+produces chromosome-scale fungal genome assemblies through
+a fully automated pipeline. Starting from raw reads, it
+performs adaptive Flye assembly, iterative Medaka polishing,
+repeat-aware scaffolding to bridge fragmented contigs, and
+telomere repeat motifs (auto-discovered or user-supplied).
+Every assembly is scored for contig confidence and delivered
+with a self-contained HTML report — no manual configuration
+or bioinformatics expertise required.
 
 Developed by: Jacob Durazo
 Citation: Durazo J, et al. FungalFlye: a purpose-built
   long-read assembly toolkit for fungal genomes. (2025)
   [Manuscript in preparation]
+
+------------------------------------------------------------
+  Quick start:  select 1 for the full assembly pipeline
+  Docs & code:  github.com/beyhanlab/FungalFlye
+------------------------------------------------------------
 
 ============================================================
 """
