@@ -14,14 +14,74 @@ def run(cmd):
     subprocess.run(cmd, shell=True, check=True)
 
 
-def check_dependencies():
-    tools = ["seqkit"]
-    missing = [t for t in tools if shutil.which(t) is None]
-    if missing:
-        print("\n❌ Missing required tools:")
-        for m in missing:
-            print(f"  - {m}")
-        print("\nInstall with: conda install -c bioconda seqkit\n")
+def check_dependencies(assembly_mode=False):
+    """
+    Check all required and optional dependencies.
+    assembly_mode=True checks assembly tools (flye, medaka, minimap2, etc.)
+    Always checks core tools needed for QC.
+    """
+
+    # tool -> (install command, required)
+    CORE = {
+        "seqkit":   ("conda install -c bioconda seqkit",         True),
+        "minimap2": ("conda install -c bioconda minimap2",        True),
+        "samtools": ("conda install -c bioconda samtools",        True),
+    }
+
+    ASSEMBLY = {
+        "flye":     ("conda install -c bioconda flye",            True),
+        "filtlong": ("conda install -c bioconda filtlong",        True),
+        "racon":    ("conda install -c bioconda racon",           False),  # only for PacBio
+        "medaka_consensus": ("pip install medaka",                True),
+    }
+
+    OPTIONAL = {
+        "purge_dups": ("conda install -c bioconda purge_dups",   False),
+        "nucmer":     ("conda install -c bioconda mummer",        False),
+    }
+
+    to_check = dict(CORE)
+    if assembly_mode:
+        to_check.update(ASSEMBLY)
+
+    missing_required = []
+    missing_optional = []
+
+    for tool, (install_cmd, required) in to_check.items():
+        if shutil.which(tool) is None:
+            if required:
+                missing_required.append((tool, install_cmd))
+            else:
+                missing_optional.append((tool, install_cmd))
+
+    # Also check optional tools and warn (don't fail)
+    for tool, (install_cmd, _) in OPTIONAL.items():
+        if shutil.which(tool) is None:
+            missing_optional.append((tool, install_cmd))
+
+    if missing_optional:
+        print("\n⚠️  Optional tools not found (some features unavailable):")
+        for tool, cmd in missing_optional:
+            print(f"  - {tool:20s}  →  {cmd}")
+
+    if missing_required:
+        print("\n❌ Missing required tools — install before running FungalFlye:\n")
+        for tool, cmd in missing_required:
+            print(f"  {tool:20s}  →  {cmd}")
+        print()
+        raise SystemExit(1)
+
+    # Check Python packages
+    py_packages = {"Bio": "biopython", "pandas": "pandas", "matplotlib": "matplotlib"}
+    missing_py = []
+    for mod, pkg in py_packages.items():
+        try:
+            __import__(mod)
+        except ImportError:
+            missing_py.append(pkg)
+    if missing_py:
+        print(f"\n❌ Missing Python packages: {', '.join(missing_py)}")
+        print(f"   Install with: pip install {' '.join(missing_py)}\n")
         raise SystemExit(1)
 
 
