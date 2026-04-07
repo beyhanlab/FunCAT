@@ -14,13 +14,71 @@ from .compare import run_snp_analysis
 from .dotplot_run import run_dotplot
 from .report import generate_report
 
+def _check_dependencies():
+    """Check all required tools are installed and warn about optional ones."""
+    import shutil
+
+    required = {
+        "flye":      "conda install -c bioconda flye",
+        "minimap2":  "conda install -c bioconda minimap2",
+        "seqkit":    "conda install -c bioconda seqkit",
+        "samtools":  "conda install -c bioconda samtools",
+        "filtlong":  "conda install -c bioconda filtlong",
+    }
+    optional = {
+        "medaka":       "pip install medaka",
+        "racon":        "conda install -c bioconda racon",
+        "purge_dups":   "conda install -c bioconda purge_dups",
+        "nucmer":       "conda install -c bioconda mummer",
+    }
+
+    missing_required = []
+    missing_optional = []
+
+    for tool, install_cmd in required.items():
+        if shutil.which(tool) is None:
+            missing_required.append((tool, install_cmd))
+
+    for tool, install_cmd in optional.items():
+        if shutil.which(tool) is None:
+            missing_optional.append((tool, install_cmd))
+
+    if missing_required:
+        typer.echo("\n❌  Missing required dependencies:\n", err=True)
+        for tool, cmd in missing_required:
+            typer.echo(f"   {tool:15s}  →  {cmd}", err=True)
+        typer.echo("\nInstall the above tools and re-run FungalFlye.\n", err=True)
+        raise typer.Exit(1)
+
+    if missing_optional:
+        typer.echo("\n⚠️  Optional tools not found (some features will be unavailable):")
+        for tool, cmd in missing_optional:
+            typer.echo(f"   {tool:15s}  →  {cmd}")
+        typer.echo()
+
+
 def _default_wizard():
     """Launch the wizard when fungalflye is run with no subcommand."""
+    _check_dependencies()
     from .wizard import wizard
     wizard()
 
 app = typer.Typer(
-    help="FungalFlye — long-read fungal genome assembly toolkit",
+    help=(
+        "FungalFlye — long-read fungal genome assembly toolkit\n\n"
+        "Developed by Jacob Durazo, Beyhan Lab, J. Craig Venter Institute\n\n"
+        "GETTING STARTED:\n\n"
+        "  Run the interactive wizard (recommended):\n\n"
+        "    fungalflye\n\n"
+        "  This guides you step-by-step through assembly, polishing,\n"
+        "  scaffolding, QC, and HTML report generation.\n\n"
+        "COMMON COMMANDS:\n\n"
+        "  fungalflye              Launch interactive wizard (full pipeline)\n"
+        "  fungalflye qc           Run QC + HTML report on any assembly FASTA\n"
+        "  fungalflye report       Generate a standalone HTML report\n"
+        "  fungalflye telo-scaffold  Attach telomeric fragments to chromosome ends\n\n"
+        "Citation: Durazo J, et al. FungalFlye (2025) [Manuscript in preparation]"
+    ),
     invoke_without_command=True,
 )
 
@@ -81,7 +139,11 @@ def assemble(
     ploidy:         str = typer.Option("haploid",         help="haploid | diploid"),
     asm_coverage:   int = typer.Option(60,                help="Flye --asm-coverage"),
 ):
-    """Run the full FungalFlye assembly pipeline."""
+    """
+    Run the full FungalFlye assembly pipeline (non-interactive).
+    For guided setup, just run: fungalflye
+    """
+    _check_dependencies()
     final = run_assembly(
         reads=reads, genome_size=gsize, outdir=outdir, threads=threads,
         min_read_len=min_read_len, downsample_cov=downsample_cov,
@@ -99,7 +161,13 @@ def qc(
     html_report:   bool          = typer.Option(True,  help="Generate HTML report"),
     name:          str           = typer.Option("",    help="Assembly name for report"),
 ):
-    """Run assembly QC: stats, length histogram, telomere analysis, HTML report."""
+    """
+    Run QC on any assembly FASTA: stats, contig histogram,
+    telomere completeness scan, and self-contained HTML report.
+
+    Example:
+      fungalflye qc assembly.fasta --telomere TTAGGG --name MyStrain
+    """
     run_qc(
         fasta=fasta, telomere=telomere, run_telomeres=run_telomeres,
         report=html_report,

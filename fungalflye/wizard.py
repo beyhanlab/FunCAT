@@ -16,10 +16,15 @@ BANNER = r"""
 
 🧬🐉  FungalFlye  🐉🧬
 Long-read fungal genome assembly toolkit
+Version 0.3  |  Beyhan Lab  |  J. Craig Venter Institute
 
 Chromosome-scale assemblies from Nanopore and PacBio reads
-with automated QC, telomere validation,
-SNP detection, and genome dotplot support
+with automated QC, telomere validation, and HTML reporting.
+
+Developed by: Jacob Durazo
+Citation: Durazo J, et al. FungalFlye: a purpose-built
+  long-read assembly toolkit for fungal genomes. (2025)
+  [Manuscript in preparation]
 
 ============================================================
 """
