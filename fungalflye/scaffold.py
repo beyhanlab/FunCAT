@@ -351,8 +351,8 @@ def run_telomere_scaffolding(
     print(f"   Motif: {telomere_motif}  |  Min support: {min_support} reads")
     print("=" * 60)
 
-    telo_dir = Path(outdir) / "telo_scaffolding"
-    telo_dir.mkdir(exist_ok=True)
+    telo_dir = Path(outdir)
+    telo_dir.mkdir(parents=True, exist_ok=True)
 
     out_fasta = telo_dir / "telo_scaffolded.fasta"
 
