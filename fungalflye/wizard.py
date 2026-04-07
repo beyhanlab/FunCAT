@@ -49,6 +49,12 @@ ENHANCEMENT_MENU = {
         "default": False,
         "time":  "+20–40 min",
     },
+    "telo_scaffolding": {
+        "label": "Telomere-guided scaffolding",
+        "desc":  "Attaches small telomeric fragments to chromosome ends",
+        "default": False,
+        "time":  "+10 min",
+    },
     "confidence_scoring": {
         "label": "Contig confidence scoring",
         "desc":  "Flags suspicious contigs (collapsed repeats, contamination)",
@@ -307,6 +313,10 @@ def wizard():
         min_contig_size = typer.prompt("Minimum contig size (bp)", default=5000, type=int)
 
         run_telomeres, tel_motif, auto_tel = get_telomere_setup()
+
+        # Pass telomere motif into enhancements so telo_scaffolding can use it
+        if tel_motif:
+            enhancements["telo_motif"] = tel_motif
 
         typer.echo("\n" + "=" * 60)
         typer.echo("Ready to assemble:")

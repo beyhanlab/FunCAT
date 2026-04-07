@@ -11,7 +11,7 @@ from .enhance import (
     run_purge_dups,
     score_contig_confidence,
 )
-from .scaffold import run_scaffold
+from .scaffold import run_scaffold, run_telomere_scaffolding
 
 
 # ------------------------------------------------
@@ -46,6 +46,7 @@ DEFAULT_ENHANCEMENTS = {
     "purge_dups":         False,   # only meaningful for diploid
     "confidence_scoring": True,
     "scaffolding":        False,   # opt-in (adds time)
+    "telo_scaffolding":   False,   # opt-in: attach telomeric fragments to chromosomes
 }
 
 
@@ -407,6 +408,22 @@ def run_assembly(
         shutil.copy(pruned_fasta, final_fasta)
     else:
         print("[fungalflye] Final assembly already exists")
+
+    # MODULE 6 — Telomere-guided scaffolding
+    # Runs after pruning so it operates on the clean assembly
+    if enhancements.get("telo_scaffolding"):
+        telo_motif = enhancements.get("telo_motif", "TTAGGG")
+        telo_result = run_telomere_scaffolding(
+            assembly=final_fasta,
+            reads=reads_used,
+            outdir=outdir,
+            threads=threads,
+            minimap2_preset=cfg["minimap2_preset"],
+            telomere_motif=telo_motif,
+            min_support=2,
+        )
+        # Update final.fasta with telo-scaffolded version
+        shutil.copy(telo_result, final_fasta)
 
     # MODULE 4 — Confidence scoring
     if enhancements.get("confidence_scoring"):
