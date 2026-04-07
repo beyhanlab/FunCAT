@@ -75,6 +75,18 @@ conda install -c bioconda mummer
 fungalflye --help
 ```
 
+### Updating to the latest version
+
+If you already have FungalFlye installed:
+
+```bash
+cd /path/to/FungalFlye
+conda activate fungalflye
+git pull origin main
+```
+
+No reinstall needed — the editable install picks up changes automatically.
+
 
 ---
 
