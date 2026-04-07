@@ -99,8 +99,8 @@ def get_read_type() -> str:
 
 def get_ploidy() -> str:
     typer.echo("\nSelect ploidy:")
-    typer.echo("  1) Haploid  — most filamentous fungi (Aspergillus, Neurospora, Fusarium...)")
-    typer.echo("  2) Diploid  — heterozygous species (Histoplasma, Candida, Cryptococcus...)")
+    typer.echo("  1) Haploid  — most fungi (Aspergillus, Neurospora, Fusarium, Histoplasma...)")
+    typer.echo("  2) Diploid  — heterozygous species (Candida albicans, Cryptococcus...)")
     choice = typer.prompt("Enter choice", default="1")
     return "diploid" if choice.strip() == "2" else "haploid"
 
