@@ -324,7 +324,11 @@ def wizard():
         typer.echo(f"  Downsample    : {downsample_cov}x" if downsample_cov else "  Downsample    : off")
         typer.echo(f"  Contig cutoff : {min_contig_size} bp")
         typer.echo(f"  Ploidy        : {ploidy}")
-        active_mods = [ENHANCEMENT_MENU[k]["label"] for k, v in enhancements.items() if v]
+        active_mods = [
+    ENHANCEMENT_MENU[k]["label"]
+    for k, v in enhancements.items()
+    if v and k in ENHANCEMENT_MENU
+]
         typer.echo(f"  Modules       : {', '.join(active_mods) if active_mods else 'none'}")
         typer.echo("=" * 60)
 
