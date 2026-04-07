@@ -89,8 +89,21 @@ def discover_telomere_motif(fasta, k=6, window=3000):
             kmer = ends[i:i+k]
             if "N" not in kmer:
                 kmer_counts[kmer] += 1
-    most_common = kmer_counts.most_common(10)
-    print("\nTop candidate telomere kmers:")
+
+    def is_junk(kmer):
+        if len(set(kmer)) == 1:
+            return True  # pure homopolymer: TTTTTT, AAAAAA
+        if len(set(kmer)) == 2 and kmer == kmer[:2] * (len(kmer) // 2):
+            return True  # dinucleotide repeat: ATATAT, TATATA
+        return False
+
+    filtered = {k: v for k, v in kmer_counts.items() if not is_junk(k)}
+    if not filtered:
+        print("[fungalflye] Warning: could not find non-homopolymer motif — defaulting to TTAGGG")
+        return "TTAGGG"
+
+    most_common = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:10]
+    print("\nTop candidate telomere kmers (homopolymers excluded):")
     for kmer, count in most_common:
         print(f"  {kmer}  ({count})")
     best = most_common[0][0]
@@ -152,28 +165,15 @@ def print_assembly_report(fasta, lengths, telo_df=None):
 
 def run_qc(fasta, telomere=None, run_telomeres=False,
            report=True, run_metadata=None):
-    """
-    Parameters
-    ----------
-    fasta         : path to assembly FASTA
-    telomere      : motif string, or None (auto-discovered if run_telomeres=True)
-    run_telomeres : run telomere scan
-    report        : generate HTML report (default True)
-    run_metadata  : dict passed to report generator {assembly_name, ploidy, ...}
-    """
     check_dependencies()
     fasta = Path(fasta)
     print("\n[fungalflye] Starting QC...")
-
     outdir = fasta.parent / "fungalflye_qc"
-    outdir.mkdir(exist_ok=True)
-
+    outdir.mkdir(parents=True, exist_ok=True)
     run(f"seqkit stats {fasta} > {outdir / 'stats.txt'}")
     run(f"seqkit fx2tab -n -l {fasta} > {outdir / 'lengths.tsv'}")
-
     df = pd.read_csv(outdir / "lengths.tsv", sep="\t", header=None)
     lengths = df[1].tolist()
-
     plt.figure(figsize=(6, 4))
     plt.hist(lengths, bins=30)
     plt.xlabel("Contig length (bp)")
@@ -182,7 +182,6 @@ def run_qc(fasta, telomere=None, run_telomeres=False,
     plt.tight_layout()
     plt.savefig(outdir / "length_histogram.png")
     plt.close()
-
     telo_df = None
     if run_telomeres:
         if telomere is None:
@@ -190,11 +189,8 @@ def run_qc(fasta, telomere=None, run_telomeres=False,
         print(f"\n[fungalflye] Scanning telomeres using motif: {telomere}")
         telo_df = scan_telomeres(str(fasta), telomere)
         telo_df.to_csv(outdir / "telomeres.tsv", sep="\t", index=False)
-
     print_assembly_report(fasta, lengths, telo_df)
     print(f"\n✅ QC complete. Results in: {outdir}\n")
-
-    # HTML report
     if report:
         confidence_tsv = fasta.parent / "confidence" / "contig_confidence.tsv"
         from .report import generate_report
