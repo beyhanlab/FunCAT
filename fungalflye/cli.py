@@ -141,31 +141,27 @@ def report(
 
 @app.command()
 def telo_scaffold(
-    fasta:    str           = typer.Argument(..., help="Path to assembly FASTA"),
-    reads:    str           = typer.Argument(..., help="Path to reads FASTQ"),
-    outdir:   str           = typer.Option("fungalflye_telo", help="Output directory"),
-    motif:    str           = typer.Option("TTAGGG", help="Telomere motif"),
-    threads:  int           = typer.Option(8, help="CPU threads"),
-    support:  int           = typer.Option(2, help="Min supporting reads for a bridge"),
+    fasta:    str = typer.Argument(..., help="Path to assembly FASTA"),
+    reads:    str = typer.Argument(..., help="Path to reads FASTQ"),
+    outdir:   str = typer.Option("fungalflye_telo", help="Output directory"),
+    motif:    str = typer.Option("TTAGGG", help="Telomere motif"),
+    threads:  int = typer.Option(8, help="CPU threads"),
+    support:  int = typer.Option(2, help="Min supporting reads for a bridge"),
 ):
     """
     Run telomere-guided scaffolding on an existing assembly.
     Attaches small telomeric fragments to uncapped chromosome ends.
-    Can be run standalone on any FASTA — no need to re-run the full pipeline.
     """
     from .scaffold import run_telomere_scaffolding
-    from pathlib import Path
-
     result = run_telomere_scaffolding(
-        assembly=fasta,
-        reads=reads,
-        outdir=outdir,
-        threads=threads,
-        minimap2_preset="map-ont",
-        telomere_motif=motif,
-        min_support=support,
+        assembly=fasta, reads=reads, outdir=outdir, threads=threads,
+        minimap2_preset="map-ont", telomere_motif=motif, min_support=support,
     )
     typer.echo(f"\n✅ Telomere-scaffolded assembly: {result}\n")
+
+
+@app.command()
+def snps(
     reference: str = typer.Argument(..., help="Reference genome FASTA"),
     query:     str = typer.Argument(..., help="Query genome FASTA"),
     outdir:    str = typer.Option("fungalflye_snps", help="Output directory"),
