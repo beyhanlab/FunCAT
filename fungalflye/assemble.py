@@ -375,6 +375,20 @@ def run_assembly(
             end_window=2000,
         )
 
+    # MODULE 6 — Telomere-guided scaffolding (runs after general scaffolding, before pruning)
+    if enhancements.get("telo_scaffolding"):
+        telo_motif = enhancements.get("telo_motif", "TTAGGG")
+        telo_result = run_telomere_scaffolding(
+            assembly=polished_fasta,
+            reads=reads_used,
+            outdir=outdir,
+            threads=threads,
+            minimap2_preset=cfg["minimap2_preset"],
+            telomere_motif=telo_motif,
+            min_support=2,
+        )
+        polished_fasta = telo_result
+
     # Mito separation
     assembly_info = flye_dir / "assembly_info.txt"
     if assembly_info.exists():
@@ -408,22 +422,6 @@ def run_assembly(
         shutil.copy(pruned_fasta, final_fasta)
     else:
         print("[fungalflye] Final assembly already exists")
-
-    # MODULE 6 — Telomere-guided scaffolding
-    # Runs after pruning so it operates on the clean assembly
-    if enhancements.get("telo_scaffolding"):
-        telo_motif = enhancements.get("telo_motif", "TTAGGG")
-        telo_result = run_telomere_scaffolding(
-            assembly=final_fasta,
-            reads=reads_used,
-            outdir=outdir,
-            threads=threads,
-            minimap2_preset=cfg["minimap2_preset"],
-            telomere_motif=telo_motif,
-            min_support=2,
-        )
-        # Update final.fasta with telo-scaffolded version
-        shutil.copy(telo_result, final_fasta)
 
     # MODULE 4 — Confidence scoring
     if enhancements.get("confidence_scoring"):
