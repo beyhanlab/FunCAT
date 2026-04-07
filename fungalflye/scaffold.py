@@ -295,6 +295,11 @@ def run_scaffold(
 # Telomere-guided scaffolding
 # ================================================
 
+def revcomp(s):
+    table = str.maketrans("ACGT", "TGCA")
+    return s.upper().translate(table)[::-1]
+
+
 def _scan_telo_signal(seq, motif, window=3000, min_repeats=3):
     """Return (start_has_telo, end_has_telo) for a sequence."""
     rc = revcomp(motif)
@@ -377,23 +382,22 @@ def run_telomere_scaffolding(
         telo_status[cid] = {"start": has_start, "end": has_end}
 
     # Step 2 — classify contigs
-    median_len = sorted(lengths.values())[len(lengths) // 2]
-    size_threshold = max(median_len * 0.3, 50_000)
-
-    telo_fragments = []   # small contigs with telo signal
-    large_contigs  = []   # large contigs (chromosome bodies)
+    # Classify contigs by telomere status, not size
+    # telo_fragments = contigs with at least one telomeric end (chromosome caps)
+    # large_contigs  = all contigs (we try to join any uncapped end)
+    telo_fragments = []
+    # large_contigs = contigs WITHOUT telomeric ends (attachment targets)
+    # telo_fragments = contigs WITH at least one telomeric end (to be attached)
+    large_contigs  = []
 
     for cid, ts in telo_status.items():
-        has_any_telo = ts["start"] or ts["end"]
-        is_small     = lengths[cid] < size_threshold
-
-        if has_any_telo and is_small:
+        if ts["start"] or ts["end"]:
             telo_fragments.append(cid)
-        if lengths[cid] >= size_threshold:
+        else:
             large_contigs.append(cid)
 
-    print(f"[fungalflye] Large chromosome contigs : {len(large_contigs)}")
-    print(f"[fungalflye] Small telomeric fragments : {len(telo_fragments)}")
+    print(f"[fungalflye] Contigs with telomeric ends : {len(telo_fragments)}")
+    print(f"[fungalflye] Total contigs               : {len(large_contigs)}")
 
     if not telo_fragments:
         print("[fungalflye] No telomeric fragments found — skipping telo scaffolding")
@@ -440,9 +444,9 @@ def run_telomere_scaffolding(
         ctg_names   = [h[0] for h in unique_hits]
 
         has_telo_frag  = any(c in telo_fragments for c in ctg_names)
-        has_large_ctg  = any(c in large_contigs  for c in ctg_names)
+        has_other      = len(set(ctg_names)) >= 2
 
-        if not (has_telo_frag and has_large_ctg): continue
+        if not (has_telo_frag and has_other): continue
 
         for i in range(len(unique_hits)):
             for j in range(i + 1, len(unique_hits)):
@@ -464,8 +468,9 @@ def run_telomere_scaffolding(
         return out_fasta
 
     print(f"\n[fungalflye] Found {len(confident)} telomere bridges:")
-    for (a, a_side), (b, b_side) in sorted(confident, key=lambda k: confident[k], reverse=True):
-        support = confident[((a, a_side), (b, b_side))]
+    for key in sorted(confident.keys(), key=lambda k: confident[k], reverse=True):
+        (a, a_side), (b, b_side) = key
+        support = confident[key]
         frag    = a if a in telo_fragments else b
         large   = b if a in telo_fragments else a
         f_side  = a_side if a in telo_fragments else b_side
@@ -485,8 +490,8 @@ def run_telomere_scaffolding(
 
     joins_made = 0
 
-    for (a, a_side), (b, b_side) in sorted(confident.items(),
-                                             key=lambda x: x[1], reverse=True):
+    for key in sorted(confident.keys(), key=lambda k: confident[k], reverse=True):
+        (a, a_side), (b, b_side) = key
         frag_id  = a if a in telo_fragments else b
         large_id = b if a in telo_fragments else a
         frag_side  = a_side if a in telo_fragments else b_side
@@ -528,17 +533,19 @@ def run_telomere_scaffolding(
         print(f"  Attached {frag_id} to {large_side} of {large_id}")
 
     # Step 5 — write output
-    # Include large contigs (extended), unattached telo fragments, and other small contigs
     out_records = []
+
+    # Write extended large contigs
     for cid, seq in new_records.items():
-        from Bio.SeqRecord import SeqRecord
-        from Bio.Seq import Seq
         out_records.append(SeqRecord(Seq(seq), id=cid, description=""))
 
+    # Write any contigs that were NOT large contigs and NOT used as fragments
     for cid, rec in records.items():
-        if cid in large_contigs: continue       # already in new_records
-        if cid in used_frags:    continue       # attached to a chromosome
-        out_records.append(rec)                 # keep remaining small contigs
+        if cid in large_contigs:
+            continue       # already written above
+        if cid in used_frags:
+            continue       # successfully attached — don't write separately
+        out_records.append(rec)   # unattached small contigs kept as-is
 
     SeqIO.write(out_records, str(out_fasta), "fasta")
 
