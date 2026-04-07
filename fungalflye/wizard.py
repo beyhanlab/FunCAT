@@ -3,7 +3,7 @@ import os
 import time
 import typer
 
-from .assemble import run_assembly, READ_TYPE_CONFIGS, DEFAULT_ENHANCEMENTS
+from .assemble import run_assembly, READ_TYPE_CONFIGS, DEFAULT_ENHANCEMENTS, parse_genome_size
 from .qc import run_qc, discover_telomere_motif
 from .cli import analyze_reads, preview_filter
 from .compare import run_snp_analysis
@@ -322,9 +322,20 @@ def wizard():
         if typer.confirm("Apply read length filter?", default=True):
             cutoff = typer.prompt("Minimum read length", default=suggested_cutoff)
             kept, removed = preview_filter(lengths, cutoff)
-            typer.echo(f"\nReads kept    : {kept:,}")
-            typer.echo(f"Reads removed : {removed:,}")
-            if not typer.confirm("Confirm these filter settings?", default=True):
+            genome_bp = parse_genome_size(gsize)
+            kept_bases = lengths[lengths >= cutoff].sum()
+            est_coverage = kept_bases / genome_bp if genome_bp > 0 else 0
+            typer.echo(f"\nReads kept        : {kept:,}")
+            typer.echo(f"Reads removed     : {removed:,}")
+            typer.echo(f"Bases retained    : {kept_bases:,} bp")
+            typer.echo(f"Estimated coverage: {est_coverage:.1f}x")
+            if est_coverage < 20:
+                typer.echo("  ⚠️  Coverage below 20x — assembly quality may be reduced")
+            elif est_coverage > 100:
+                typer.echo("  ℹ️  High coverage — consider downsampling to 60–80x for speed")
+            else:
+                typer.echo("  ✅ Coverage looks good for assembly")
+            if not typer.confirm("\nConfirm these filter settings?", default=True):
                 abort()
                 continue
             min_read_len = cutoff
