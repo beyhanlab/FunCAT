@@ -175,7 +175,6 @@ def get_telomere_setup():
     typer.echo("\nDo you know the telomere motif?")
     typer.echo("  1) Yes — I'll enter it")
     typer.echo("  2) Auto-discover from assembly")
-    typer.echo("\n  Tip: most fungi use TTAGGG. Histoplasma uses TTAGGG.")
     choice = typer.prompt("Enter 1 or 2", default="2").strip()
 
     # If user accidentally typed a motif sequence instead of 1 or 2, catch it

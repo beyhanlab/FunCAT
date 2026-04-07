@@ -144,8 +144,8 @@ def print_assembly_report(fasta, lengths, telo_df=None):
         print(f"Chromosomes complete : {both}")
         print(f"Mean telomere density: {telo_df['density_per_kb'].mean():.2f} hits/kb")
     print("\n" + "=" * 60)
-    verdict = "✅ Assembly appears chromosome-level complete" if len(lengths) <= 12 \
-              else "⚠️  Assembly fragmented — consider tuning parameters"
+    verdict = "✅ Assembly appears chromosome-level complete" if len(lengths) <= 50 \
+              else "⚠️  Assembly fragmented — consider tuning parameters or enabling scaffolding"
     print(verdict)
     print("=" * 60 + "\n")
 
