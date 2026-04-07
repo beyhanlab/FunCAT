@@ -87,6 +87,12 @@ git pull origin main
 
 No reinstall needed — the editable install picks up changes automatically.
 
+> **Note for existing users:** If you originally installed Medaka via conda (`conda install medaka`), reinstall it with pip for the correct version:
+> ```bash
+> conda remove medaka
+> pip install medaka
+> ```
+
 
 ---
 
