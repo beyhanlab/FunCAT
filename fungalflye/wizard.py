@@ -175,9 +175,16 @@ def get_telomere_setup():
     typer.echo("\nDo you know the telomere motif?")
     typer.echo("  1) Yes — I'll enter it")
     typer.echo("  2) Auto-discover from assembly")
-    choice = typer.prompt("Enter 1 or 2", default="2")
-    if choice.strip() == "1":
-        motif = typer.prompt("Enter telomere motif sequence").strip().upper()
+    typer.echo("\n  Tip: most fungi use TTAGGG. Histoplasma uses TTAGGG.")
+    choice = typer.prompt("Enter 1 or 2", default="2").strip()
+
+    # If user accidentally typed a motif sequence instead of 1 or 2, catch it
+    if len(choice) > 2 or (choice not in ("1", "2") and any(c in "ACGT" for c in choice.upper())):
+        typer.echo(f"  → Detected motif sequence: {choice.upper()} — using it directly")
+        return True, choice.upper(), False
+
+    if choice == "1":
+        motif = typer.prompt("Enter telomere motif (e.g. TTAGGG)").strip().upper()
         return True, motif, False
     return True, None, True
 
@@ -258,7 +265,7 @@ def wizard():
         # Enhancement selection
         enhancements = get_enhancements(ploidy)
 
-        asm_coverage = typer.prompt("Flye assembly coverage target", default=60, type=int)
+        asm_coverage = 60  # handled automatically by adaptive params module
 
         Path(outdir).mkdir(exist_ok=True)
 
