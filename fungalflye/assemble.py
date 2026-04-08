@@ -251,8 +251,8 @@ def run_assembly(
     reads = Path(reads)
 
     flye_dir        = outdir / "flye"
-    filtered_reads  = outdir / "reads.filtered.fastq"
-    downsampled_reads = outdir / "reads.downsampled.fastq"
+    filtered_reads  = outdir / "reads.filtered.fastq.gz"
+    downsampled_reads = outdir / "reads.downsampled.fastq.gz"
     contained_fasta = outdir / "contained_pruned.fasta"
     pruned_fasta    = outdir / "pruned.fasta"
     final_fasta     = outdir / "final.fasta"
@@ -276,7 +276,7 @@ def run_assembly(
             reads_used = filtered_reads
         else:
             print("\n[fungalflye] Filtering reads")
-            run(f"seqkit seq -m {min_read_len} {reads} > {filtered_reads}")
+            run(f"seqkit seq -m {min_read_len} {reads} | gzip -1 > {filtered_reads}")
             reads_used = filtered_reads
 
     # DOWNSAMPLING
@@ -288,7 +288,7 @@ def run_assembly(
             genome_bp = parse_genome_size(genome_size)
             target_bases = genome_bp * downsample_cov
             run(f"filtlong --min_length 1000 --target_bases {target_bases} "
-                f"{reads_used} > {downsampled_reads}")
+                f"{reads_used} | gzip -1 > {downsampled_reads}")
             reads_used = downsampled_reads
 
     if not reads_used.exists():
