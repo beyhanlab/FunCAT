@@ -10,6 +10,7 @@ from .enhance import (
     run_medaka_iterative,
     run_purge_dups,
     score_contig_confidence,
+    run_illumina_polishing,
 )
 from .scaffold import run_scaffold, run_telomere_scaffolding
 
@@ -47,6 +48,7 @@ DEFAULT_ENHANCEMENTS = {
     "confidence_scoring": True,
     "scaffolding":        False,   # opt-in (adds time)
     "telo_scaffolding":   False,   # opt-in: attach telomeric fragments to chromosomes
+    "illumina_polish":    False,   # opt-in: Illumina short-read polishing after Medaka
 }
 
 
@@ -227,6 +229,9 @@ def run_assembly(
     ploidy="haploid",
     asm_coverage=60,
     enhancements=None,
+    illumina_r1=None,
+    illumina_r2=None,
+    illumina_polisher="polypolish",
 ):
     if enhancements is None:
         enhancements = dict(DEFAULT_ENHANCEMENTS)
@@ -352,6 +357,17 @@ def run_assembly(
             run(f"racon -t {threads} {reads_used} {paf} {assembly} > {racon_fasta}")
             paf.unlink(missing_ok=True)
         polished_fasta = racon_fasta
+
+    # MODULE 6 — Illumina polishing (optional)
+    if illumina_r1 and illumina_r2:
+        polished_fasta = run_illumina_polishing(
+            assembly=polished_fasta,
+            illumina_r1=illumina_r1,
+            illumina_r2=illumina_r2,
+            outdir=outdir,
+            threads=threads,
+            polisher=illumina_polisher,
+        )
 
     # MODULE 3 — Purge Duplicates
     if enhancements.get("purge_dups") and ploidy == "diploid":

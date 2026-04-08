@@ -78,6 +78,12 @@ ENHANCEMENT_MENU = {
         "default": True,
         "time":  "+5 min",
     },
+    "illumina_polish": {
+        "label": "Illumina polishing  [requires short reads]",
+        "desc":  "Polish with Illumina reads after Medaka — dramatically reduces stop codons",
+        "default": False,
+        "time":  "+20–40 min",
+    },
 }
 
 
@@ -231,16 +237,17 @@ def wizard():
         typer.echo("  2) Assembly only")
         typer.echo("  3) QC only")
         typer.echo("  4) Compare genomes  (SNPs + dotplot)")
-        typer.echo("  5) Exit\n")
+        typer.echo("  5) Illumina polishing  (polish existing assembly with short reads)")
+        typer.echo("  6) Exit\n")
 
         mode = typer.prompt("Enter choice", default="1")
 
-        if mode == "5":
+        if mode == "6":
             typer.echo("\nGoodbye 🐉\n")
             return
 
-        if mode not in ("1", "2", "3", "4"):
-            typer.echo("Invalid choice — please enter 1–5.")
+        if mode not in ("1", "2", "3", "4", "5"):
+            typer.echo("Invalid choice — please enter 1–6.")
             continue
 
         # QC ONLY
@@ -274,6 +281,58 @@ def wizard():
                     run_dotplot(reference, query, outdir)
                 if not typer.confirm("\nRun another comparison?", default=False):
                     break
+            if not typer.confirm("Run another workflow?", default=False):
+                return
+            continue
+
+        # ILLUMINA POLISHING (standalone)
+        if mode == "5":
+            typer.echo("\n🧬 Illumina Polishing — polish an existing assembly with short reads\n")
+            assembly_path = typer.prompt("Path to assembly FASTA to polish", value_proc=path_exists)
+            illumina_r1   = typer.prompt("Path to Illumina R1 reads (FASTQ/FASTQ.gz)", value_proc=path_exists)
+            illumina_r2   = typer.prompt("Path to Illumina R2 reads (FASTQ/FASTQ.gz)", value_proc=path_exists)
+
+            typer.echo("\nSelect polisher:")
+            typer.echo("  1) Polypolish  (recommended — alignment-based, fast)")
+            typer.echo("  2) Pilon       (variant-aware, slower but thorough)")
+            pol_choice = typer.prompt("Enter choice", default="1").strip()
+            illumina_polisher = "pilon" if pol_choice == "2" else "polypolish"
+
+            outdir_ill  = typer.prompt("Output directory", default="fungalflye_illumina_polish")
+            threads_ill = typer.prompt("Threads", default=8, type=int)
+
+            typer.echo(f"\n🧾 Illumina polishing plan:")
+            typer.echo(f"  Assembly  : {assembly_path}")
+            typer.echo(f"  R1        : {illumina_r1}")
+            typer.echo(f"  R2        : {illumina_r2}")
+            typer.echo(f"  Polisher  : {illumina_polisher}")
+            typer.echo(f"  Threads   : {threads_ill}")
+            typer.echo(f"  Outdir    : {outdir_ill}")
+
+            if not typer.confirm("\nLaunch Illumina polishing?", default=True):
+                abort()
+                if not typer.confirm("Run another workflow?", default=False):
+                    return
+                continue
+
+            from .enhance import run_illumina_polishing
+            import time as _time
+            start_ill = _time.time()
+            result = run_illumina_polishing(
+                assembly=assembly_path,
+                illumina_r1=illumina_r1,
+                illumina_r2=illumina_r2,
+                outdir=outdir_ill,
+                threads=threads_ill,
+                polisher=illumina_polisher,
+            )
+            elapsed_ill = _time.time() - start_ill
+            typer.echo(f"\n✅ Illumina polishing complete in {elapsed_ill / 60:.1f} min")
+            typer.echo(f"   Polished assembly: {result}\n")
+
+            if typer.confirm("Run QC on the polished assembly?", default=True):
+                run_qc(str(result), telomere=None, run_telomeres=True)
+
             if not typer.confirm("Run another workflow?", default=False):
                 return
             continue
@@ -349,6 +408,20 @@ def wizard():
         if tel_motif:
             enhancements["telo_motif"] = tel_motif
 
+        # Collect Illumina read paths if illumina_polish was enabled
+        illumina_r1 = None
+        illumina_r2 = None
+        illumina_polisher = "polypolish"
+        if enhancements.get("illumina_polish"):
+            typer.echo("\n🔬 Illumina polishing selected — please provide short-read paths\n")
+            illumina_r1 = typer.prompt("Path to Illumina R1 reads (FASTQ/FASTQ.gz)", value_proc=path_exists)
+            illumina_r2 = typer.prompt("Path to Illumina R2 reads (FASTQ/FASTQ.gz)", value_proc=path_exists)
+            typer.echo("\nSelect polisher:")
+            typer.echo("  1) Polypolish  (recommended — alignment-based, fast)")
+            typer.echo("  2) Pilon       (variant-aware, slower but thorough)")
+            pol_choice = typer.prompt("Enter choice", default="1").strip()
+            illumina_polisher = "pilon" if pol_choice == "2" else "polypolish"
+
         typer.echo("\n" + "=" * 60)
         typer.echo("Ready to assemble:")
         typer.echo(f"  Read filter   : {min_read_len} bp min" if min_read_len else "  Read filter   : off")
@@ -382,6 +455,9 @@ def wizard():
             ploidy=ploidy,
             asm_coverage=asm_coverage,
             enhancements=enhancements,
+            illumina_r1=illumina_r1,
+            illumina_r2=illumina_r2,
+            illumina_polisher=illumina_polisher,
         )
 
         if mode == "1" and typer.confirm("\nAssembly finished — run QC?", default=True):

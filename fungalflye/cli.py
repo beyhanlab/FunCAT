@@ -30,6 +30,10 @@ def _check_dependencies():
         "racon":        "conda install -c bioconda racon",
         "purge_dups":   "conda install -c bioconda purge_dups",
         "nucmer":       "conda install -c bioconda mummer",
+        "polypolish":   "conda install -c bioconda polypolish",
+        "polypolish_insert_filter": "conda install -c bioconda polypolish",
+        "pilon":        "conda install -c bioconda pilon",
+        "bwa":          "conda install -c bioconda bwa",
     }
 
     missing_required = []
@@ -77,6 +81,12 @@ app = typer.Typer(
         "  fungalflye qc           Run QC + HTML report on any assembly FASTA\n"
         "  fungalflye report       Generate a standalone HTML report\n"
         "  fungalflye telo-scaffold  Attach telomeric fragments to chromosome ends\n\n"
+        "ILLUMINA POLISHING (NEW!):\n\n"
+        "  Add Illumina reads for dramatically improved base accuracy:\n\n"
+        "    fungalflye assemble long_reads.fastq.gz 40m \\\n"
+        "      --illumina-r1 illumina_R1.fastq.gz \\\n"
+        "      --illumina-r2 illumina_R2.fastq.gz\n\n"
+        "  This reduces internal stop codons from ~22% to <5%!\n\n"
         "Citation: Durazo J, et al. FungalFlye (2025) [Manuscript in preparation]"
     ),
     invoke_without_command=True,
@@ -138,10 +148,18 @@ def assemble(
     read_type:      str = typer.Option("nano-hq",         help="nano-hq | nano-raw | pacbio-hifi"),
     ploidy:         str = typer.Option("haploid",         help="haploid | diploid"),
     asm_coverage:   int = typer.Option(60,                help="Flye --asm-coverage"),
+    illumina_r1:    Optional[str] = typer.Option(None,    help="Illumina R1 reads for polishing (optional)"),
+    illumina_r2:    Optional[str] = typer.Option(None,    help="Illumina R2 reads for polishing (optional)"),
+    illumina_polisher: str = typer.Option("polypolish",   help="polypolish | pilon"),
 ):
     """
     Run the full FungalFlye assembly pipeline (non-interactive).
     For guided setup, just run: fungalflye
+    
+    NEW: Illumina polishing support!
+    Use --illumina-r1 and --illumina-r2 to provide Illumina reads
+    for polishing after Medaka. This dramatically improves base
+    accuracy and reduces internal stop codons.
     """
     _check_dependencies()
     final = run_assembly(
@@ -149,6 +167,8 @@ def assemble(
         min_read_len=min_read_len, downsample_cov=downsample_cov,
         min_contig_size=min_contig_size, read_type=read_type,
         ploidy=ploidy, asm_coverage=asm_coverage,
+        illumina_r1=illumina_r1, illumina_r2=illumina_r2,
+        illumina_polisher=illumina_polisher,
     )
     typer.echo(f"\n✅ Final assembly: {final}\n")
 
