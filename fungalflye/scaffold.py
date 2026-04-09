@@ -32,15 +32,39 @@ def run(cmd):
     subprocess.run(cmd, shell=True, check=True)
 
 
-def _parse_paf(paf_path, contig_lengths, end_window=2000):
+def _parse_paf(paf_path, contig_lengths, end_window=500, min_mapq=30,
+               min_read_span_fraction=0.8, flagged_contigs=None):
     """
     Parse PAF alignments and find reads that anchor to the
     end-region of one contig and the start-region of another.
 
-    end_window: how many bp from each end counts as a "terminal" region.
+    Parameters
+    ----------
+    end_window : int
+        How many bp from each end counts as a terminal region.
+        Smaller = more specific, fewer false joins. Default 500bp.
+    min_mapq : int
+        Minimum mapping quality. 30+ rejects multi-mapping repeat reads.
+    min_read_span_fraction : float
+        Read alignment must span at least this fraction of end_window
+        to count. Prevents short clips from being counted as bridges.
+    flagged_contigs : set or None
+        Contigs flagged as collapsed repeats by confidence scoring.
+        These are excluded from bridging to prevent repeat-driven joins.
 
     Returns: dict of (contig_a, side_a, contig_b, side_b) -> support_count
     """
+
+    if flagged_contigs is None:
+        flagged_contigs = set()
+
+    # Minimum alignment length needed to span end_window meaningfully
+    min_aln_len = int(end_window * min_read_span_fraction)
+
+    # How close to the absolute tip a read must reach to count as a bridge.
+    # A read that anchors within end_window but never reaches the tip is
+    # likely an internal read — not a true gap-bridging read.
+    tip_distance = max(200, end_window // 10)
 
     # For each read, collect all contig terminal hits
     read_hits = defaultdict(list)   # read_id -> list of (contig, side)
@@ -51,28 +75,48 @@ def _parse_paf(paf_path, contig_lengths, end_window=2000):
             if len(cols) < 12:
                 continue
 
-            read_id = cols[0]
-            t_name  = cols[5]
-            t_start = int(cols[7])
-            t_end   = int(cols[8])
-            t_len   = int(cols[6])
-            mapq    = int(cols[11])
+            read_id  = cols[0]
+            t_name   = cols[5]
+            t_start  = int(cols[7])
+            t_end    = int(cols[8])
+            t_len    = int(cols[6])
+            mapq     = int(cols[11])
+            aln_len  = t_end - t_start
 
-            if mapq < 10:
+            # Reject low-quality and short alignments
+            if mapq < min_mapq:
+                continue
+            if aln_len < min_aln_len:
+                continue
+
+            # Skip collapsed repeat contigs entirely
+            if t_name in flagged_contigs:
                 continue
 
             t_len_actual = contig_lengths.get(t_name, t_len)
 
-            at_start = t_start <= end_window
-            at_end   = t_end   >= t_len_actual - end_window
+            # Contig must be large enough for end_window to make sense
+            if t_len_actual < end_window * 3:
+                continue
 
-            if at_start and not at_end:
+            # The read must ANCHOR in the terminal window (within end_window)
+            # AND EXIT the contig — reach within tip_distance of the very end.
+            # This rejects long internal reads that happen to sit near an end
+            # but are not actually bridging out of the contig.
+            in_start_window = t_start <= end_window
+            exits_start     = t_start <= tip_distance
+
+            in_end_window   = t_end >= t_len_actual - end_window
+            exits_end       = t_end >= t_len_actual - tip_distance
+
+            if in_start_window and exits_start and not in_end_window:
                 read_hits[read_id].append((t_name, "start"))
-            elif at_end and not at_start:
+            elif in_end_window and exits_end and not in_start_window:
                 read_hits[read_id].append((t_name, "end"))
             # reads entirely internal or spanning whole contig — skip
 
     # Count contig-pair joins supported by reads
+    # Enforce max ONE join partner per contig end (prevents fan-out from repeats)
     join_support = defaultdict(int)
 
     for read_id, hits in read_hits.items():
@@ -81,6 +125,11 @@ def _parse_paf(paf_path, contig_lengths, end_window=2000):
 
         # Deduplicate hits for this read
         unique_hits = list(set(hits))
+
+        # Safety: ignore reads hitting more than 4 distinct contig ends
+        # (those are almost certainly repeat reads spanning many loci)
+        if len(unique_hits) > 4:
+            continue
 
         for i in range(len(unique_hits)):
             for j in range(i + 1, len(unique_hits)):
@@ -119,6 +168,20 @@ def _build_scaffolds(records_dict, joins, min_support):
     if not confident:
         print(f"[fungalflye] No joins with >= {min_support} supporting reads found")
         return list(records_dict.values())
+
+    # Enforce max ONE join per contig end — keep only the highest-support
+    # partner for each (contig, side). This prevents a single contig end
+    # from being joined to multiple partners (which signals a repeat, not a gap).
+    best_per_end = {}   # (contig, side) -> best_key
+    for key, support in sorted(confident.items(), key=lambda x: x[1], reverse=True):
+        (a, a_side), (b, b_side) = key
+        end_a = (a, a_side)
+        end_b = (b, b_side)
+        if end_a not in best_per_end and end_b not in best_per_end:
+            best_per_end[end_a] = key
+            best_per_end[end_b] = key
+
+    confident = {v: confident[v] for v in best_per_end.values()}
 
     # Build adjacency: end -> (other_contig, other_side, support)
     adjacency = defaultdict(list)  # (contig, side) -> [(contig, side, support)]
@@ -215,18 +278,65 @@ def run_scaffold(
     outdir,
     threads,
     minimap2_preset,
-    min_support=3,
+    min_support=None,
     end_window=2000,
+    confidence_tsv=None,
 ):
     """
     Main entry point for repeat-aware scaffolding.
+
+    min_support: If None, auto-scales with estimated coverage (max(5, cov//10)).
+                 Pass an explicit int to override.
+    end_window:  Terminal window size in bp. Default 500 (tighter than before).
+    confidence_tsv: Path to contig_confidence.tsv — flagged contigs are excluded.
+
     Returns path to scaffolded FASTA.
     """
 
+    # Load flagged (collapsed repeat) contigs from confidence scoring
+    flagged_contigs = set()
+    if confidence_tsv and Path(confidence_tsv).exists():
+        with open(confidence_tsv) as f:
+            headers = None
+            for line in f:
+                parts = line.strip().split("\t")
+                if headers is None:
+                    headers = parts
+                    continue
+                row = dict(zip(headers, parts))
+                if row.get("label") == "FLAG":
+                    flagged_contigs.add(row["contig"])
+        if flagged_contigs:
+            print(f"[fungalflye] Excluding {len(flagged_contigs)} FLAG contigs "
+                  f"from scaffolding: {', '.join(sorted(flagged_contigs))}")
+
+    # Estimate coverage from reads to auto-scale min_support
+    if min_support is None:
+        try:
+            import subprocess as _sp
+            result = _sp.run(
+                f"seqkit fx2tab -n -l {reads} 2>/dev/null | awk '{{sum+=$2}} END{{print sum}}'",
+                shell=True, capture_output=True, text=True
+            )
+            total_bases = int(result.stdout.strip() or 0)
+            assembly_size = sum(len(r.seq) for r in SeqIO.parse(str(assembly), "fasta"))
+            if assembly_size > 0 and total_bases > 0:
+                est_cov = total_bases / assembly_size
+                min_support = max(5, int(est_cov // 10))
+                print(f"[fungalflye] Estimated coverage: {est_cov:.1f}x → "
+                      f"auto min_support = {min_support}")
+            else:
+                min_support = 5
+        except Exception:
+            min_support = 5
+            print(f"[fungalflye] Could not estimate coverage — using min_support={min_support}")
+
     print("\n" + "=" * 60)
     print("🔬 Module 5 — Repeat-aware scaffolding")
-    print(f"   Min supporting reads : {min_support}")
+    print(f"   Min supporting reads : {min_support}  (coverage-scaled)")
     print(f"   Terminal window      : {end_window} bp from each contig end")
+    print(f"   Min MAPQ             : 30  (rejects multi-mapping reads)")
+    print(f"   Flagged contigs skip : {len(flagged_contigs)}")
     print("=" * 60)
 
     scaffold_dir = Path(outdir) / "scaffolding"
@@ -260,7 +370,13 @@ def run_scaffold(
 
     # Parse bridges
     print("[fungalflye] Identifying contig bridges...")
-    join_support = _parse_paf(paf, contig_lengths, end_window=end_window)
+    join_support = _parse_paf(
+        paf, contig_lengths,
+        end_window=end_window,
+        min_mapq=30,
+        min_read_span_fraction=0.8,
+        flagged_contigs=flagged_contigs,
+    )
 
     # Report candidates
     confident_joins = {k: v for k, v in join_support.items() if v >= min_support}
@@ -332,8 +448,8 @@ def run_telomere_scaffolding(
     threads,
     minimap2_preset,
     telomere_motif="TTAGGG",
-    min_support=2,
-    end_window=3000,
+    min_support=5,
+    end_window=500,
     telo_window=3000,
     min_telo_repeats=3,
 ):
@@ -415,6 +531,9 @@ def run_telomere_scaffolding(
     # Parse PAF for bridges between telo fragments and large contigs
     print("[fungalflye] Identifying telomere bridges...")
 
+    min_aln_len = int(end_window * 0.8)   # read must span 80% of end_window
+    tip_distance = max(200, end_window // 10)  # read must exit the contig tip
+
     read_hits = {}
     with open(paf) as f:
         for line in f:
@@ -426,14 +545,19 @@ def run_telomere_scaffolding(
             t_end    = int(cols[8])
             t_len    = int(cols[6])
             mapq     = int(cols[11])
-            if mapq < 10: continue
+            aln_len  = t_end - t_start
 
-            at_start = t_start <= end_window
-            at_end   = t_end   >= t_len - end_window
+            if mapq < 30: continue
+            if aln_len < min_aln_len: continue
 
-            if at_start and not at_end:
+            in_start_window = t_start <= end_window
+            exits_start     = t_start <= tip_distance
+            in_end_window   = t_end >= t_len - end_window
+            exits_end       = t_end >= t_len - tip_distance
+
+            if in_start_window and exits_start and not in_end_window:
                 read_hits.setdefault(read_id, []).append((t_name, "start"))
-            elif at_end and not at_start:
+            elif in_end_window and exits_end and not in_start_window:
                 read_hits.setdefault(read_id, []).append((t_name, "end"))
 
     # Count bridges: telo_fragment_end -> large_contig_end
@@ -441,6 +565,10 @@ def run_telomere_scaffolding(
     for read_id, hits in read_hits.items():
         if len(hits) < 2: continue
         unique_hits = list(set(hits))
+
+        # Reject reads hitting too many distinct contig ends — repeat reads
+        if len(unique_hits) > 4: continue
+
         ctg_names   = [h[0] for h in unique_hits]
 
         has_telo_frag  = any(c in telo_fragments for c in ctg_names)

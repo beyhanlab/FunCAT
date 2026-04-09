@@ -234,7 +234,7 @@ def telo_scaffold(
     outdir:   str = typer.Option("fungalflye_telo", help="Output directory"),
     motif:    str = typer.Option("TTAGGG", help="Telomere motif"),
     threads:  int = typer.Option(8, help="CPU threads"),
-    support:  int = typer.Option(2, help="Min supporting reads for a bridge"),
+    support:  int = typer.Option(5, help="Min supporting reads for a bridge"),
 ):
     """
     Run telomere-guided scaffolding on an existing assembly.

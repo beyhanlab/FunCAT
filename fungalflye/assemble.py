@@ -381,14 +381,16 @@ def run_assembly(
 
     # MODULE 5 — Scaffolding
     if enhancements.get("scaffolding"):
+        confidence_tsv = Path(outdir) / "confidence" / "contig_confidence.tsv"
         polished_fasta = run_scaffold(
             assembly=polished_fasta,
             reads=reads_used,
             outdir=outdir,
             threads=threads,
             minimap2_preset=cfg["minimap2_preset"],
-            min_support=3,
+            min_support=None,   # auto-scaled from coverage
             end_window=2000,
+            confidence_tsv=str(confidence_tsv) if confidence_tsv.exists() else None,
         )
 
     # MODULE 6 — Telomere-guided scaffolding (runs after general scaffolding, before pruning)
@@ -401,7 +403,8 @@ def run_assembly(
             threads=threads,
             minimap2_preset=cfg["minimap2_preset"],
             telomere_motif=telo_motif,
-            min_support=2,
+            min_support=5,
+            end_window=500,
         )
         polished_fasta = telo_result
 
