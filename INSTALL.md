@@ -1,30 +1,50 @@
-# FunCAT — Installation
+# FunCAT Installation
 
-## Fresh install
+**Fungal Chromosome Assembly Tool**
+
+## One-command install (recommended)
 
 ```bash
 git clone https://github.com/beyhanlab/FunCAT.git
 cd FunCAT
-conda create -n funcat python=3.10 -y
+conda env create -f environment.yml
 conda activate funcat
-conda install -c bioconda flye minimap2 seqkit filtlong samtools racon -y
+funcat
+```
+
+That's it. Everything — Flye, Medaka, Polypolish, Racon, BWA, samtools, purge_dups, and FunCAT itself — installs in one step.
+
+## Manual install
+
+If you prefer to set up your own environment:
+
+```bash
+# Create environment
+conda create -n funcat python=3.10
+conda activate funcat
+
+# Required tools
+conda install -c bioconda flye minimap2 seqkit filtlong samtools
+
+# ONT polisher
 pip install medaka
+
+# Optional tools (unlock additional modules)
+conda install -c bioconda racon purge_dups mummer bwa
+pip install polypolish
+
+# Install FunCAT
 pip install -e .
+```
+
+## Verify installation
+
+```bash
 funcat --help
 ```
 
-## Updating (if already installed)
+## Requirements
 
-```bash
-cd /path/to/FunCAT
-conda activate funcat
-git pull origin main
-```
-
-That's it. No reinstall needed.
-
-## Notes
-
-- Always use `pip install medaka` — not conda
-- Always activate the `funcat` environment before running the tool
-- Run `funcat` from any directory once installed
+- Python 3.9+
+- conda (recommended) or pip
+- macOS or Linux

@@ -55,10 +55,10 @@ def _check_dependencies():
         raise typer.Exit(1)
 
     if missing_optional:
-        typer.echo("\n⚠️  Optional tools not found (some features will be unavailable):")
+        typer.echo("\nℹ️   Some optional modules are not installed (core assembly works fine):")
         for tool, cmd in missing_optional:
-            typer.echo(f"   {tool:15s}  →  {cmd}")
-        typer.echo()
+            typer.echo(f"   {tool:30s}  →  {cmd}")
+        typer.echo("   Install any of the above to unlock those specific features.\n")
 
 
 def _default_wizard():

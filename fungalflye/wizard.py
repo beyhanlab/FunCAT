@@ -224,9 +224,6 @@ def abort():
 @app.command()
 def wizard():
 
-    from .qc import check_dependencies
-    check_dependencies(assembly_mode=False)
-
     typer.echo(BANNER)
     typer.echo("Welcome to FunCAT.\n")
 

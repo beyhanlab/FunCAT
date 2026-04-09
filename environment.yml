@@ -1,7 +1,8 @@
-name: fungalflye
+name: funcat
 channels:
   - bioconda
   - conda-forge
+  - defaults
 dependencies:
   - python=3.10
   - flye
@@ -9,10 +10,17 @@ dependencies:
   - racon
   - seqkit
   - filtlong
+  - samtools
+  - purge_dups
+  - mummer
+  - bwa
   - pandas
   - matplotlib
   - biopython
+  - scikit-learn
   - typer
   - pip
   - pip:
-      - git+https://github.com/beyhanlab/FungalFlye.git
+      - medaka
+      - polypolish
+      - git+https://github.com/beyhanlab/FunCAT.git
