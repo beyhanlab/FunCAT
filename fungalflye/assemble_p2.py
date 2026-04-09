@@ -1,6 +1,6 @@
 
 def prune_small_contigs(fasta, out_fasta, min_size=5000):
-    print(f"\n[fungalflye] Removing contigs < {min_size} bp\n")
+    print(f"\n[funcat] Removing contigs < {min_size} bp\n")
     fasta, out_fasta = Path(fasta), Path(out_fasta)
     kept, removed_count = [], 0
     for r in SeqIO.parse(str(fasta), "fasta"):
@@ -9,7 +9,7 @@ def prune_small_contigs(fasta, out_fasta, min_size=5000):
         else:
             kept.append(r)
     SeqIO.write(kept, str(out_fasta), "fasta")
-    print(f"[fungalflye] Removed {removed_count} small contigs")
+    print(f"[funcat] Removed {removed_count} small contigs")
     return removed_count
 
 
@@ -52,4 +52,4 @@ def _separate_mito(polished_fasta, assembly_info, outdir):
     if mito:
         SeqIO.write(nuclear, str(outdir / "nuclear.fasta"), "fasta")
         SeqIO.write(mito,    str(outdir / "mitochondrial.fasta"), "fasta")
-        print(f"\n[fungalflye] Separated {len(mito)} mitochondrial contig(s)")
+        print(f"\n[funcat] Separated {len(mito)} mitochondrial contig(s)")

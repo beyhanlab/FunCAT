@@ -1,5 +1,5 @@
 """
-fungalflye.scaffold
+funcat.scaffold
 ~~~~~~~~~~~~~~~~~~~
 Module 5 — Repeat-aware scaffolding
 
@@ -166,7 +166,7 @@ def _build_scaffolds(records_dict, joins, min_support):
     }
 
     if not confident:
-        print(f"[fungalflye] No joins with >= {min_support} supporting reads found")
+        print(f"[funcat] No joins with >= {min_support} supporting reads found")
         return list(records_dict.values())
 
     # Enforce max ONE join per contig end — keep only the highest-support
@@ -307,7 +307,7 @@ def run_scaffold(
                 if row.get("label") == "FLAG":
                     flagged_contigs.add(row["contig"])
         if flagged_contigs:
-            print(f"[fungalflye] Excluding {len(flagged_contigs)} FLAG contigs "
+            print(f"[funcat] Excluding {len(flagged_contigs)} FLAG contigs "
                   f"from scaffolding: {', '.join(sorted(flagged_contigs))}")
 
     # Estimate coverage from reads to auto-scale min_support
@@ -323,13 +323,13 @@ def run_scaffold(
             if assembly_size > 0 and total_bases > 0:
                 est_cov = total_bases / assembly_size
                 min_support = max(5, int(est_cov // 10))
-                print(f"[fungalflye] Estimated coverage: {est_cov:.1f}x → "
+                print(f"[funcat] Estimated coverage: {est_cov:.1f}x → "
                       f"auto min_support = {min_support}")
             else:
                 min_support = 5
         except Exception:
             min_support = 5
-            print(f"[fungalflye] Could not estimate coverage — using min_support={min_support}")
+            print(f"[funcat] Could not estimate coverage — using min_support={min_support}")
 
     print("\n" + "=" * 60)
     print("🔬 Module 5 — Repeat-aware scaffolding")
@@ -345,7 +345,7 @@ def run_scaffold(
     scaffolded_fasta = scaffold_dir / "scaffolded.fasta"
 
     if scaffolded_fasta.exists():
-        print("[fungalflye] Existing scaffolded assembly detected — skipping")
+        print("[funcat] Existing scaffolded assembly detected — skipping")
         return scaffolded_fasta
 
     assembly = Path(assembly)
@@ -357,19 +357,19 @@ def run_scaffold(
     contig_lengths = {r.id: len(r.seq) for r in records_dict.values()}
 
     n_input = len(records_dict)
-    print(f"\n[fungalflye] Input: {n_input} contigs")
+    print(f"\n[funcat] Input: {n_input} contigs")
 
     # Map reads
     paf = scaffold_dir / "reads.paf"
     if not paf.exists():
-        print("[fungalflye] Mapping reads to assembly...")
+        print("[funcat] Mapping reads to assembly...")
         run(
             f"minimap2 -x {minimap2_preset} -t {threads} "
             f"--secondary=no {assembly} {reads} > {paf}"
         )
 
     # Parse bridges
-    print("[fungalflye] Identifying contig bridges...")
+    print("[funcat] Identifying contig bridges...")
     join_support = _parse_paf(
         paf, contig_lengths,
         end_window=end_window,
@@ -380,7 +380,7 @@ def run_scaffold(
 
     # Report candidates
     confident_joins = {k: v for k, v in join_support.items() if v >= min_support}
-    print(f"[fungalflye] Found {len(confident_joins)} high-confidence joins "
+    print(f"[funcat] Found {len(confident_joins)} high-confidence joins "
           f"(>= {min_support} supporting reads)")
 
     if confident_joins:
@@ -391,7 +391,7 @@ def run_scaffold(
             print(f"    {a} ({a_side}) ↔ {b} ({b_side})  [{support} reads]")
 
     # Build scaffolds
-    print("\n[fungalflye] Building scaffolds...")
+    print("\n[funcat] Building scaffolds...")
     scaffolds = _build_scaffolds(records_dict, join_support, min_support)
 
     # ── Small contig rescue pass ──────────────────────────────────────────
@@ -427,7 +427,7 @@ def run_scaffold(
     }
 
     if small_unjoined and large_contigs:
-        print(f"\n[fungalflye] Small contig rescue pass:")
+        print(f"\n[funcat] Small contig rescue pass:")
         print(f"   Candidates : {len(small_unjoined)} small unjoined contigs")
         print(f"   Targets    : {len(large_contigs)} large chromosome-body contigs")
 
@@ -550,7 +550,7 @@ def run_telomere_scaffolding(
     out_fasta = telo_dir / "telo_scaffolded.fasta"
 
     if out_fasta.exists():
-        print("[fungalflye] Existing telomere scaffold detected — skipping")
+        print("[funcat] Existing telomere scaffold detected — skipping")
         return out_fasta
 
     assembly = Path(assembly)
@@ -560,7 +560,7 @@ def run_telomere_scaffolding(
     lengths = {r.id: len(r.seq) for r in records.values()}
 
     # Step 1 — scan telomere signal on all contig ends
-    print("\n[fungalflye] Scanning contig ends for telomere signal...")
+    print("\n[funcat] Scanning contig ends for telomere signal...")
     telo_status = {}
     for cid, rec in records.items():
         seq = str(rec.seq).upper()
@@ -584,11 +584,11 @@ def run_telomere_scaffolding(
         else:
             large_contigs.append(cid)
 
-    print(f"[fungalflye] Contigs with telomeric ends : {len(telo_fragments)}")
-    print(f"[fungalflye] Total contigs               : {len(large_contigs)}")
+    print(f"[funcat] Contigs with telomeric ends : {len(telo_fragments)}")
+    print(f"[funcat] Total contigs               : {len(large_contigs)}")
 
     if not telo_fragments:
-        print("[fungalflye] No telomeric fragments found — skipping telo scaffolding")
+        print("[funcat] No telomeric fragments found — skipping telo scaffolding")
         import shutil as _sh
         _sh.copy(str(assembly), str(out_fasta))
         return out_fasta
@@ -596,12 +596,12 @@ def run_telomere_scaffolding(
     # Step 3 — map reads to find bridges
     paf = telo_dir / "reads.paf"
     if not paf.exists():
-        print("\n[fungalflye] Mapping reads for telomere bridge detection...")
+        print("\n[funcat] Mapping reads for telomere bridge detection...")
         run(f"minimap2 -x {minimap2_preset} -t {threads} "
             f"--secondary=no {assembly} {reads} > {paf}")
 
     # Parse PAF for bridges between telo fragments and large contigs
-    print("[fungalflye] Identifying telomere bridges...")
+    print("[funcat] Identifying telomere bridges...")
 
     min_aln_len = int(end_window * 0.8)   # read must span 80% of end_window
     tip_distance = max(200, end_window // 10)  # read must exit the contig tip
@@ -662,12 +662,12 @@ def run_telomere_scaffolding(
     confident = {k: v for k, v in bridge_support.items() if v >= min_support}
 
     if not confident:
-        print(f"[fungalflye] No telomere bridges with >= {min_support} reads — skipping")
+        print(f"[funcat] No telomere bridges with >= {min_support} reads — skipping")
         import shutil as _sh
         _sh.copy(str(assembly), str(out_fasta))
         return out_fasta
 
-    print(f"\n[fungalflye] Found {len(confident)} telomere bridges:")
+    print(f"\n[funcat] Found {len(confident)} telomere bridges:")
     for key in sorted(confident.keys(), key=lambda k: confident[k], reverse=True):
         (a, a_side), (b, b_side) = key
         support = confident[key]

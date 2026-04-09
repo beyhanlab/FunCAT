@@ -271,7 +271,7 @@ def wizard():
             while True:
                 reference = typer.prompt("Reference genome", value_proc=path_exists)
                 query     = typer.prompt("Query genome",     value_proc=path_exists)
-                outdir    = typer.prompt("Output folder", default="fungalflye_compare")
+                outdir    = typer.prompt("Output folder", default="funcat_compare")
                 if not typer.confirm("\nReady to compare — continue?", default=True):
                     abort()
                     break
@@ -298,7 +298,7 @@ def wizard():
             pol_choice = typer.prompt("Enter choice", default="1").strip()
             illumina_polisher = "pilon" if pol_choice == "2" else "polypolish"
 
-            outdir_ill  = typer.prompt("Output directory", default="fungalflye_illumina_polish")
+            outdir_ill  = typer.prompt("Output directory", default="funcat_illumina_polish")
             threads_ill = typer.prompt("Threads", default=8, type=int)
 
             typer.echo(f"\n🧾 Illumina polishing plan:")
@@ -340,7 +340,7 @@ def wizard():
         # ASSEMBLY / FULL PIPELINE
         reads  = typer.prompt("Path to raw reads", value_proc=path_exists)
         gsize  = normalize_gsize(typer.prompt("Genome size (e.g. 40m, 1.2g)", default="40m"))
-        outdir = typer.prompt("Output folder", default="fungalflye_out")
+        outdir = typer.prompt("Output folder", default="funcat_out")
         threads = typer.prompt("Threads", default=8, type=int)
 
         read_type = get_read_type()

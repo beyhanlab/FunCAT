@@ -4,7 +4,7 @@ from pathlib import Path
 
 def run(cmd):
     """Run external command safely."""
-    print(f"\n[fungalflye] Running:\n{cmd}\n")
+    print(f"\n[funcat] Running:\n{cmd}\n")
 
     result = subprocess.run(cmd, shell=True)
 

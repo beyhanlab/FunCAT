@@ -65,7 +65,7 @@ def check_dependencies(assembly_mode=False):
             print(f"  - {tool:20s}  →  {cmd}")
 
     if missing_required:
-        print("\n❌ Missing required tools — install before running FungalFlye:\n")
+        print("\n❌ Missing required tools — install before running FunCAT:\n")
         for tool, cmd in missing_required:
             print(f"  {tool:20s}  →  {cmd}")
         print()
@@ -140,7 +140,7 @@ def tandem_metrics(seq, motif, max_mismatch=0):
 
 
 def discover_telomere_motif(fasta, k=6, window=3000):
-    print("\n[fungalflye] Discovering telomere motif...")
+    print("\n[funcat] Discovering telomere motif...")
     kmer_counts = Counter()
     for record in SeqIO.parse(fasta, "fasta"):
         seq = str(record.seq).upper()
@@ -159,7 +159,7 @@ def discover_telomere_motif(fasta, k=6, window=3000):
 
     filtered = {k: v for k, v in kmer_counts.items() if not is_junk(k)}
     if not filtered:
-        print("[fungalflye] Warning: could not find non-homopolymer motif — defaulting to TTAGGG")
+        print("[funcat] Warning: could not find non-homopolymer motif — defaulting to TTAGGG")
         return "TTAGGG"
 
     most_common = sorted(filtered.items(), key=lambda x: x[1], reverse=True)[:10]
@@ -167,7 +167,7 @@ def discover_telomere_motif(fasta, k=6, window=3000):
     for kmer, count in most_common:
         print(f"  {kmer}  ({count})")
     best = most_common[0][0]
-    print(f"\n[fungalflye] Selected motif: {best}")
+    print(f"\n[funcat] Selected motif: {best}")
     return best
 
 
@@ -198,7 +198,7 @@ def print_assembly_report(fasta, lengths, telo_df=None):
             n50, l50 = L, i
             break
     print("\n" + "=" * 60)
-    print("🧬 FungalFlye Assembly Report")
+    print("🧬 FunCAT Assembly Report")
     print("=" * 60)
     print(f"\nAssembly file : {fasta}\n")
     print(f"Contigs       : {len(lengths)}")
@@ -227,8 +227,8 @@ def run_qc(fasta, telomere=None, run_telomeres=False,
            report=True, run_metadata=None):
     check_dependencies()
     fasta = Path(fasta)
-    print("\n[fungalflye] Starting QC...")
-    outdir = fasta.parent / "fungalflye_qc"
+    print("\n[funcat] Starting QC...")
+    outdir = fasta.parent / "funcat_qc"
     outdir.mkdir(parents=True, exist_ok=True)
     run(f"seqkit stats {fasta} > {outdir / 'stats.txt'}")
     run(f"seqkit fx2tab -n -l {fasta} > {outdir / 'lengths.tsv'}")
@@ -246,7 +246,7 @@ def run_qc(fasta, telomere=None, run_telomeres=False,
     if run_telomeres:
         if telomere is None:
             telomere = discover_telomere_motif(str(fasta))
-        print(f"\n[fungalflye] Scanning telomeres using motif: {telomere}")
+        print(f"\n[funcat] Scanning telomeres using motif: {telomere}")
         telo_df = scan_telomeres(str(fasta), telomere)
         telo_df.to_csv(outdir / "telomeres.tsv", sep="\t", index=False)
     print_assembly_report(fasta, lengths, telo_df)

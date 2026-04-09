@@ -1,5 +1,5 @@
 """
-fungalflye.enhance
+funcat.enhance
 ~~~~~~~~~~~~~~~~~~
 Assembly enhancement modules:
   1. Adaptive Flye parameter selection
@@ -45,7 +45,7 @@ def suggest_flye_params(reads, genome_size_bp, threads=8):
     print("=" * 60)
 
     # --- read stats via seqkit ---
-    print("\n[fungalflye] Analysing read characteristics...")
+    print("\n[funcat] Analysing read characteristics...")
 
     stats_raw = run_capture(
         f"seqkit fx2tab -n -l -g {reads} 2>/dev/null"
@@ -64,7 +64,7 @@ def suggest_flye_params(reads, genome_size_bp, threads=8):
                 pass
 
     if not lengths:
-        print("[fungalflye] ⚠️  Could not parse read stats — using defaults")
+        print("[funcat] ⚠️  Could not parse read stats — using defaults")
         return {}
 
     total_bases = sum(lengths)
@@ -137,7 +137,7 @@ def suggest_flye_params(reads, genome_size_bp, threads=8):
             "consider --min-overlap reduction if assembly fragments"
         )
 
-    print("\n[fungalflye] Recommended Flye parameters:")
+    print("\n[funcat] Recommended Flye parameters:")
     for r in reasoning:
         print(r)
 
@@ -197,7 +197,7 @@ def run_medaka_iterative(
         last_round = state.get("last_round", 0)
         last_variants = state.get("last_variants", None)
         current = Path(state.get("current_fasta", assembly))
-        print(f"[fungalflye] Resuming from round {last_round}")
+        print(f"[funcat] Resuming from round {last_round}")
     else:
         state = {}
         last_round = 0
@@ -212,12 +212,12 @@ def run_medaka_iterative(
         polished = round_dir / "consensus.fasta"
 
         if polished.exists():
-            print(f"[fungalflye] Round {round_num} already done — skipping")
+            print(f"[funcat] Round {round_num} already done — skipping")
             current = polished
             final_fasta = polished
             continue
 
-        print(f"\n[fungalflye] Medaka round {round_num} / {max_rounds}")
+        print(f"\n[funcat] Medaka round {round_num} / {max_rounds}")
 
         round_dir.mkdir(exist_ok=True)
 
@@ -238,7 +238,7 @@ def run_medaka_iterative(
         variants_this_round = sum(_count_variants(v) for v in vcf_files)
 
         print(
-            f"[fungalflye] Round {round_num} complete — "
+            f"[funcat] Round {round_num} complete — "
             f"{variants_this_round} variants corrected"
         )
 
@@ -274,7 +274,7 @@ def run_medaka_iterative(
     if final_fasta is None:
         raise RuntimeError("Medaka polishing produced no output")
 
-    print(f"\n[fungalflye] Final polished assembly: {final_fasta}")
+    print(f"\n[funcat] Final polished assembly: {final_fasta}")
     return final_fasta
 
 
@@ -302,7 +302,7 @@ def run_purge_dups(assembly, reads, outdir, threads, minimap2_preset):
     haplotigs = purge_dir / "hap.fa"
 
     if purged_primary.exists():
-        print("[fungalflye] Existing purge_dups output detected — skipping")
+        print("[funcat] Existing purge_dups output detected — skipping")
         return purged_primary, haplotigs
 
     assembly = Path(assembly)
@@ -316,31 +316,31 @@ def run_purge_dups(assembly, reads, outdir, threads, minimap2_preset):
         print("   Skipping haplotig purging — assembly will be unpurged\n")
         return assembly, None
 
-    print("\n[fungalflye] Step 1 — self-mapping assembly")
+    print("\n[funcat] Step 1 — self-mapping assembly")
     self_paf = purge_dir / "self.paf"
     run(f"minimap2 -xasm5 -DP -t {threads} {assembly} {assembly} > {self_paf}")
 
-    print("[fungalflye] Step 2 — mapping reads to assembly")
+    print("[funcat] Step 2 — mapping reads to assembly")
     read_paf = purge_dir / "reads.paf"
     run(f"minimap2 -x {minimap2_preset} -t {threads} {assembly} {reads} > {read_paf}")
 
-    print("[fungalflye] Step 3 — coverage histogram")
+    print("[funcat] Step 3 — coverage histogram")
     stat_file = purge_dir / "PB.stat"
     base_cov = purge_dir / "PB.base.cov"
     run(f"pbcstat {read_paf} -O {purge_dir}/")
 
-    print("[fungalflye] Step 4 — calculating cutoffs")
+    print("[funcat] Step 4 — calculating cutoffs")
     cutoffs_file = purge_dir / "cutoffs"
     run(f"calcuts {stat_file} > {cutoffs_file}")
 
-    print("[fungalflye] Step 5 — splitting assembly")
+    print("[funcat] Step 5 — splitting assembly")
     split_asm = purge_dir / "split.fa"
     run(f"split_fa {assembly} > {split_asm}")
 
     split_paf = purge_dir / "split.paf"
     run(f"minimap2 -xasm5 -DP -t {threads} {split_asm} {split_asm} > {split_paf}")
 
-    print("[fungalflye] Step 6 — purging haplotigs")
+    print("[funcat] Step 6 — purging haplotigs")
     bed_file = purge_dir / "dups.bed"
     run(
         f"purge_dups -2 -T {cutoffs_file} -c {base_cov} "
@@ -394,7 +394,7 @@ def score_contig_confidence(assembly, reads, outdir, threads, minimap2_preset):
     report = score_dir / "contig_confidence.tsv"
 
     if report.exists():
-        print("[fungalflye] Existing confidence report detected — skipping")
+        print("[funcat] Existing confidence report detected — skipping")
         return report
 
     # Check samtools
@@ -403,7 +403,7 @@ def score_contig_confidence(assembly, reads, outdir, threads, minimap2_preset):
         print("   Install with: conda install -c bioconda samtools")
         return None
 
-    print("[fungalflye] Mapping reads for coverage analysis...")
+    print("[funcat] Mapping reads for coverage analysis...")
 
     run(
         f"minimap2 -ax {minimap2_preset} -t {threads} {assembly} {reads} "
@@ -411,7 +411,7 @@ def score_contig_confidence(assembly, reads, outdir, threads, minimap2_preset):
     )
     run(f"samtools index {bam}")
 
-    print("[fungalflye] Computing per-contig coverage statistics...")
+    print("[funcat] Computing per-contig coverage statistics...")
 
     depth_raw = run_capture(f"samtools depth -a {bam}")
 
@@ -526,7 +526,7 @@ def run_illumina_polishing(
     polished_assembly = polish_dir / f"polished_{polisher}.fasta"
     
     if polished_assembly.exists():
-        print("[fungalflye] Existing Illumina polishing output detected — skipping")
+        print("[funcat] Existing Illumina polishing output detected — skipping")
         return polished_assembly
     
     assembly = Path(assembly)
@@ -551,10 +551,10 @@ def run_illumina_polishing(
         print("   Skipping Illumina polishing — assembly will be unpolished\n")
         return assembly
     
-    print("\n[fungalflye] Step 1 — Indexing assembly for BWA")
+    print("\n[funcat] Step 1 — Indexing assembly for BWA")
     run(f"bwa index {assembly}")
     
-    print("[fungalflye] Step 2 — Mapping Illumina reads")
+    print("[funcat] Step 2 — Mapping Illumina reads")
     sam_r1 = polish_dir / "alignments_1.sam"
     sam_r2 = polish_dir / "alignments_2.sam"
     
@@ -562,23 +562,23 @@ def run_illumina_polishing(
     run(f"bwa mem -t {threads} -a {assembly} {illumina_r2} > {sam_r2}")
     
     if polisher == "polypolish":
-        print("[fungalflye] Step 3 — Filtering alignments (Polypolish)")
+        print("[funcat] Step 3 — Filtering alignments (Polypolish)")
         filtered_r1 = polish_dir / "filtered_1.sam"
         filtered_r2 = polish_dir / "filtered_2.sam"
         
         run(f"polypolish_insert_filter --in1 {sam_r1} --in2 {sam_r2} --out1 {filtered_r1} --out2 {filtered_r2}")
         
-        print("[fungalflye] Step 4 — Polishing with Polypolish")
+        print("[funcat] Step 4 — Polishing with Polypolish")
         run(f"polypolish {assembly} {filtered_r1} {filtered_r2} > {polished_assembly}")
         
     elif polisher == "pilon":
-        print("[fungalflye] Step 3 — Converting to BAM and sorting")
+        print("[funcat] Step 3 — Converting to BAM and sorting")
         bam_file = polish_dir / "illumina_mapped.bam"
         
         run(f"samtools view -bS {sam_r1} | samtools sort -@ {threads} -o {bam_file}")
         run(f"samtools index {bam_file}")
         
-        print("[fungalflye] Step 4 — Polishing with Pilon")
+        print("[funcat] Step 4 — Polishing with Pilon")
         run(f"pilon --genome {assembly} --frags {bam_file} --output polished_pilon --outdir {polish_dir} --changes --threads {threads}")
         
         # Pilon outputs with different name

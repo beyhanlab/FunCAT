@@ -51,7 +51,7 @@ def _check_dependencies():
         typer.echo("\n❌  Missing required dependencies:\n", err=True)
         for tool, cmd in missing_required:
             typer.echo(f"   {tool:15s}  →  {cmd}", err=True)
-        typer.echo("\nInstall the above tools and re-run FungalFlye.\n", err=True)
+        typer.echo("\nInstall the above tools and re-run FunCAT.\n", err=True)
         raise typer.Exit(1)
 
     if missing_optional:
@@ -62,7 +62,7 @@ def _check_dependencies():
 
 
 def _default_wizard():
-    """Launch the wizard when fungalflye is run with no subcommand."""
+    """Launch the wizard when funcat is run with no subcommand."""
     _check_dependencies()
     from .wizard import wizard
     wizard()
@@ -98,7 +98,7 @@ def main(ctx: typer.Context):
 
 
 def run(cmd):
-    print(f"\n[fungalflye] Running: {cmd}\n")
+    print(f"\n[funcat] Running: {cmd}\n")
     subprocess.run(cmd, shell=True, check=True)
 
 
@@ -139,7 +139,7 @@ def preview_filter(lengths, cutoff):
 def assemble(
     reads:          str = typer.Argument(..., help="Path to input reads (FASTQ/FASTQ.gz)"),
     gsize:          str = typer.Argument(..., help="Estimated genome size, e.g. 40m, 1.2g"),
-    outdir:         str = typer.Option("fungalflye_out",  help="Output directory"),
+    outdir:         str = typer.Option("funcat_out",  help="Output directory"),
     threads:        int = typer.Option(8,                 help="CPU threads"),
     min_read_len:   int = typer.Option(0,                 help="Min read length filter (0=off)"),
     downsample_cov: int = typer.Option(0,                 help="Downsample coverage (0=off)"),
@@ -152,8 +152,8 @@ def assemble(
     illumina_polisher: str = typer.Option("polypolish",   help="polypolish | pilon"),
 ):
     """
-    Run the full FungalFlye assembly pipeline (non-interactive).
-    For guided setup, just run: fungalflye
+    Run the full FunCAT assembly pipeline (non-interactive).
+    For guided setup, just run: funcat
     
     NEW: Illumina polishing support!
     Use --illumina-r1 and --illumina-r2 to provide Illumina reads
@@ -185,7 +185,7 @@ def qc(
     telomere completeness scan, and self-contained HTML report.
 
     Example:
-      fungalflye qc assembly.fasta --telomere TTAGGG --name MyStrain
+      funcat qc assembly.fasta --telomere TTAGGG --name MyStrain
     """
     run_qc(
         fasta=fasta, telomere=telomere, run_telomeres=run_telomeres,
@@ -204,7 +204,7 @@ def report(
 ):
     """
     Generate a standalone HTML report for any assembly FASTA.
-    Works on any FASTA — does not need to be from a full fungalflye run.
+    Works on any FASTA — does not need to be from a full funcat run.
     """
     fasta_path = Path(fasta)
     out_path   = Path(outdir) if outdir else fasta_path.parent
@@ -230,7 +230,7 @@ def report(
 def telo_scaffold(
     fasta:    str = typer.Argument(..., help="Path to assembly FASTA"),
     reads:    str = typer.Argument(..., help="Path to reads FASTQ"),
-    outdir:   str = typer.Option("fungalflye_telo", help="Output directory"),
+    outdir:   str = typer.Option("funcat_telo", help="Output directory"),
     motif:    str = typer.Option("TTAGGG", help="Telomere motif"),
     threads:  int = typer.Option(8, help="CPU threads"),
     support:  int = typer.Option(5, help="Min supporting reads for a bridge"),
@@ -251,7 +251,7 @@ def telo_scaffold(
 def snps(
     reference: str = typer.Argument(..., help="Reference genome FASTA"),
     query:     str = typer.Argument(..., help="Query genome FASTA"),
-    outdir:    str = typer.Option("fungalflye_snps", help="Output directory"),
+    outdir:    str = typer.Option("funcat_snps", help="Output directory"),
 ):
     """Detect SNPs between two genome assemblies using NUCmer."""
     run_snp_analysis(reference, query, outdir)
@@ -261,7 +261,7 @@ def snps(
 def dotplot(
     reference: str = typer.Argument(..., help="Reference genome FASTA"),
     query:     str = typer.Argument(..., help="Query genome FASTA"),
-    outdir:    str = typer.Option("fungalflye_dotplots", help="Output directory"),
+    outdir:    str = typer.Option("funcat_dotplots", help="Output directory"),
 ):
     """Generate a whole-genome dotplot between two assemblies."""
     run_dotplot(reference, query, outdir)
@@ -280,7 +280,7 @@ def _compare_pair(args):
 @app.command()
 def compare_folder(
     folder:  str = typer.Argument(..., help="Folder of genome FASTAs"),
-    outdir:  str = typer.Option("fungalflye_comparisons", help="Output directory"),
+    outdir:  str = typer.Option("funcat_comparisons", help="Output directory"),
     threads: int = typer.Option(4, help="Parallel workers"),
 ):
     """Run SNP + dotplot comparisons for all genome pairs in a folder (parallelised)."""

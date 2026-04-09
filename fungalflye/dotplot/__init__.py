@@ -1,5 +1,5 @@
 """
-Dotplot utilities used by FungalFlye.
+Dotplot utilities used by FunCAT.
 
 Provides genome parsing, FASTA handling, MUMmer alignment parsing,
 and helper utilities for generating genome dotplots.

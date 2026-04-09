@@ -116,7 +116,7 @@ def load_prune_settings(path):
 
 def prune_contained_contigs(fasta, out_fasta, threads=8,
                              min_identity=0.95, min_coverage=0.95):
-    print(f"\n[fungalflye] Pruning contained contigs "
+    print(f"\n[funcat] Pruning contained contigs "
           f"(identity>={min_identity}, coverage>={min_coverage})\n")
     fasta, out_fasta = Path(fasta), Path(out_fasta)
     paf = out_fasta.with_suffix(".self.paf")
@@ -142,12 +142,12 @@ def prune_contained_contigs(fasta, out_fasta, threads=8,
             kept.append(r)
     SeqIO.write(kept, str(out_fasta), "fasta")
     paf.unlink(missing_ok=True)
-    print(f"[fungalflye] Removed {removed_count} contained contigs")
+    print(f"[funcat] Removed {removed_count} contained contigs")
     return removed_count
 
 
 def prune_small_contigs(fasta, out_fasta, min_size=5000):
-    print(f"\n[fungalflye] Removing contigs < {min_size} bp\n")
+    print(f"\n[funcat] Removing contigs < {min_size} bp\n")
     fasta, out_fasta = Path(fasta), Path(out_fasta)
     kept, removed_count = [], 0
     for r in SeqIO.parse(str(fasta), "fasta"):
@@ -156,7 +156,7 @@ def prune_small_contigs(fasta, out_fasta, min_size=5000):
         else:
             kept.append(r)
     SeqIO.write(kept, str(out_fasta), "fasta")
-    print(f"[fungalflye] Removed {removed_count} small contigs")
+    print(f"[funcat] Removed {removed_count} small contigs")
     return removed_count
 
 
@@ -208,7 +208,7 @@ def _separate_mito(polished_fasta, assembly_info, outdir):
     if mito:
         SeqIO.write(nuclear, str(outdir / "nuclear.fasta"), "fasta")
         SeqIO.write(mito,    str(outdir / "mitochondrial.fasta"), "fasta")
-        print(f"\n[fungalflye] Separated {len(mito)} mitochondrial contig(s)")
+        print(f"\n[funcat] Separated {len(mito)} mitochondrial contig(s)")
 
 
 # ------------------------------------------------
@@ -272,17 +272,17 @@ def run_assembly(
     # FILTERING
     if min_read_len > 0:
         if filtered_reads.exists():
-            print("[fungalflye] Found filtered reads — skipping")
+            print("[funcat] Found filtered reads — skipping")
             reads_used = filtered_reads
         else:
-            print("\n[fungalflye] Filtering reads")
+            print("\n[funcat] Filtering reads")
             run(f"seqkit seq -m {min_read_len} {reads} | gzip -1 > {filtered_reads}")
             reads_used = filtered_reads
 
     # DOWNSAMPLING
     if downsample_cov > 0:
         if downsampled_reads.exists():
-            print("[fungalflye] Found downsampled reads — skipping")
+            print("[funcat] Found downsampled reads — skipping")
             reads_used = downsampled_reads
         else:
             genome_bp = parse_genome_size(genome_size)
@@ -305,9 +305,9 @@ def run_assembly(
     # FLYE
     assembly = flye_dir / "assembly.fasta"
     if assembly.exists():
-        print("[fungalflye] Existing Flye assembly detected — skipping")
+        print("[funcat] Existing Flye assembly detected — skipping")
     else:
-        print(f"\n[fungalflye] Running Flye ({ploidy} mode)")
+        print(f"\n[funcat] Running Flye ({ploidy} mode)")
         min_overlap = flye_params.get("min_overlap", "")
         iterations  = flye_params.get("iterations", 3)
         overlap_flag = f"--min-overlap {min_overlap}" if min_overlap else ""
@@ -432,7 +432,7 @@ def run_assembly(
         prune_small_contigs(contained_fasta, pruned_fasta, min_contig_size)
         write_prune_settings(prune_settings_path, current_settings)
     else:
-        print("[fungalflye] Existing pruned assembly with same settings — skipping")
+        print("[funcat] Existing pruned assembly with same settings — skipping")
 
     # FINAL
     if final_fasta.exists() and old_settings != current_settings:
@@ -440,7 +440,7 @@ def run_assembly(
     elif not final_fasta.exists():
         shutil.copy(pruned_fasta, final_fasta)
     else:
-        print("[fungalflye] Final assembly already exists")
+        print("[funcat] Final assembly already exists")
 
     # MODULE 4 — Confidence scoring
     if enhancements.get("confidence_scoring"):
@@ -474,12 +474,12 @@ def run_assembly(
                     if r.id not in flagged]
             SeqIO.write(kept, str(clean_fasta), "fasta")
             n_clean = len(kept)
-            print(f"\n[fungalflye] Auto-generated clean assembly (FLAG contigs removed):")
+            print(f"\n[funcat] Auto-generated clean assembly (FLAG contigs removed):")
             print(f"   Removed : {', '.join(sorted(flagged))} ({len(flagged)} collapsed repeats)")
             print(f"   Kept    : {n_clean} contigs → {clean_fasta}")
         else:
             shutil.copy(final_fasta, clean_fasta)
-            print(f"\n[fungalflye] No FLAG contigs — final_clean.fasta identical to final.fasta")
+            print(f"\n[funcat] No FLAG contigs — final_clean.fasta identical to final.fasta")
 
     print("\n" + "=" * 60)
     print("✅ Assembly Complete")

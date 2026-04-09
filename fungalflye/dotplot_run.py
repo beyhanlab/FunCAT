@@ -57,6 +57,6 @@ def run_dotplot(genome1_path, genome2_path, output_dir):
 
     plt.savefig(output_plot)
 
-    print(f"[fungalflye] Dotplot saved to {output_plot}")
+    print(f"[funcat] Dotplot saved to {output_plot}")
 
     return output_plot

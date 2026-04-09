@@ -1,0 +1,3 @@
+[console_scripts]
+funcat = fungalflye.cli:app
+funcat-wizard = fungalflye.wizard:app

@@ -1,5 +1,5 @@
 """
-fungalflye.report
+funcat.report
 ~~~~~~~~~~~~~~~~~
 Generates a single self-contained HTML report for a completed assembly.
 No internet connection required to view — everything is embedded.
@@ -15,7 +15,7 @@ Usage (from pipeline):
     )
 
 Or standalone:
-    fungalflye report --fasta final.fasta --outdir out/
+    funcat report --fasta final.fasta --outdir out/
 """
 
 import json
@@ -316,7 +316,7 @@ body {{ background: var(--bg); color: var(--text); font-family: var(--font);
       Generated <b>{now}</b> &nbsp;·&nbsp;
       Ploidy <b>{ploidy}</b> &nbsp;·&nbsp;
       Reads <b>{read_type}</b> &nbsp;·&nbsp;
-      FungalFlye v0.3
+      FunCAT v0.3
     </div>
   </div>
 
@@ -513,7 +513,7 @@ def generate_report(
         "enhancements":  run_metadata.get("enhancements",  {}),
     }
 
-    print("\n[fungalflye] Generating HTML report...")
+    print("\n[funcat] Generating HTML report...")
 
     stats            = _collect_assembly_stats(fasta)
     confidence_rows  = _collect_confidence(confidence_tsv)
@@ -521,10 +521,10 @@ def generate_report(
 
     html = _build_html(stats, confidence_rows, telo_records, metadata)
 
-    out_path = outdir / f"{metadata['assembly_name']}_fungalflye_report.html"
+    out_path = outdir / f"{metadata['assembly_name']}_funcat_report.html"
     out_path.write_text(html, encoding="utf-8")
 
-    print(f"[fungalflye] ✅ Report saved: {out_path}")
+    print(f"[funcat] ✅ Report saved: {out_path}")
     print(f"             Open in any browser — no internet required\n")
 
     return out_path
