@@ -1,8 +1,48 @@
-# FunCAT 🧬🐉
+# FunCAT 🧬🍄
 
-**Long-read fungal genome assembly toolkit**
+**Fungal Chromosome Assembly Tool**
 
-FunCAT is a complete, user-friendly pipeline for assembling fungal genomes from Nanopore and PacBio HiFi long reads. Built on top of [Flye](https://github.com/fenderglass/Flye) and [Medaka](https://github.com/nanoporetech/medaka), it adds fungal-specific intelligence that generic assemblers lack: adaptive parameter tuning, iterative polishing with convergence detection, repeat-aware scaffolding, telomere-guided chromosome capping, and a self-contained HTML report you can email to collaborators.
+Long-read fungal genome assembly from raw Nanopore or PacBio HiFi reads to a polished, chromosome-scale assembly — in a single command.
+
+Developed by Jacob Durazo · Beyhan Lab · J. Craig Venter Institute
+
+---
+
+## Install
+
+```bash
+git clone https://github.com/beyhanlab/FunCAT.git
+cd FunCAT
+conda env create -f environment.yml
+conda activate funcat
+```
+
+> **Don't have conda?** Install [Miniconda](https://docs.conda.io/en/latest/miniconda.html) first.
+
+## Run
+
+```bash
+funcat
+```
+
+That's it. The interactive wizard guides you through everything.
+
+---
+
+## What it does
+
+FunCAT takes raw Nanopore or PacBio HiFi reads and produces chromosome-scale fungal genome assemblies through a fully automated pipeline:
+
+- **Adaptive Flye assembly** — auto-tunes parameters from your read N50, coverage, and GC content
+- **Iterative Medaka polishing** — polishes up to 3 rounds, stops when the assembly converges
+- **Repeat-aware scaffolding** — uses long reads to bridge contig gaps at repeat boundaries
+- **Telomere-guided scaffolding** — attaches telomeric fragments to uncapped chromosome ends
+- **Illumina hybrid polishing** — optional short-read polishing to reduce internal stop codons
+- **Contig confidence scoring** — flags collapsed repeats and contamination before you publish
+- **Auto-generated clean assembly** — removes flagged contigs, produces publication-ready FASTA
+- **Self-contained HTML report** — share a single file with collaborators, no internet required
+
+---
 
 ## Benchmark
 
@@ -15,326 +55,50 @@ Tested on *Histoplasma capsulatum* Nanopore HQ reads (18x coverage):
 | Largest contig | 2.65 Mb | 6.06 Mb |
 | Runtime | ~45 min | ~65 min |
 
-**83% reduction in fragment count. N50 more than doubled. Same raw data.**
+**83% reduction in contig count. N50 more than doubled. Same raw data.**
 
 ---
 
-## Features
+## Read types
 
-- **Interactive wizard** — guided assembly from raw reads to final FASTA, no command-line expertise required
-- **Adaptive Flye parameters** — analyses read N50, coverage, and GC content before assembly and tunes Flye settings automatically
-- **Iterative Medaka polishing** — polishes up to 3 rounds, stops when the assembly converges
-- **Repeat-aware scaffolding** — uses long reads to bridge contig gaps at repeat boundaries
-- **Telomere-guided scaffolding** — attaches telomeric fragments to uncapped chromosome ends using TTAGGG signal
-- **Purge Duplicates** — removes haplotig duplicates from diploid assemblies (Histoplasma, Candida, Cryptococcus)
-- **Contig confidence scoring** — flags suspicious contigs (collapsed repeats, possible contamination) before you build biology on them
-- **Mitochondrial contig separation** — auto-detects and separates circular contigs in the mito size range
-- **Telomere analysis** — scans contig ends for telomeric repeats, reports chromosomal completeness
-- **Self-contained HTML report** — a single shareable file with contig stats, length distribution, GC content, telomere heatmap, and confidence table. Opens offline in any browser.
-- **Resumable pipeline** — every step is checkpointed; restart after a failure without re-running from scratch
-- **Standalone tools** — run QC, dotplot, SNP comparison, or telomere scaffolding on any existing assembly
-
----
-
-## Installation
-
-**Requirements:** Python ≥ 3.9, conda recommended
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/beyhanlab/FunCAT.git
-cd FunCAT
-
-# 2. Create a conda environment
-conda create -n funcat python=3.10
-conda activate funcat
-
-# 3. Install bioinformatics dependencies
-conda install -c bioconda flye minimap2 seqkit filtlong samtools
-
-# 4. Install Medaka (ONT polisher)
-pip install medaka
-
-# 5. Install FunCAT
-pip install -e .
-```
-
-**Optional dependencies** (install as needed):
-
-```bash
-# Purge Duplicates — for diploid assemblies
-conda install -c bioconda purge_dups
-
-# MUMmer — for SNP comparison and dotplots
-conda install -c bioconda mummer
-```
-
-**Verify installation:**
-
-```bash
-funcat --help
-```
-
-### Updating to the latest version
-
-If you already have FunCAT installed:
-
-```bash
-cd /path/to/FunCAT
-conda activate funcat
-git pull origin main
-```
-
-No reinstall needed — the editable install picks up changes automatically.
-
-> **Note for existing users:** If you originally installed Medaka via conda (`conda install medaka`), reinstall it with pip for the correct version:
-> ```bash
-> conda remove medaka
-> pip install medaka
-> ```
-
-
----
-
-## Quick Start
-
-The simplest way to run FunCAT is the interactive wizard:
-
-```bash
-funcat
-```
-
-This launches a guided menu where you select your workflow, provide your reads and genome size, choose enhancement modules, and walk through the assembly step by step. No flags to memorize.
-
----
-
-## Usage
-
-### Interactive wizard (recommended for new users)
-
-```bash
-funcat
-```
-
-Select from the main menu:
-1. **Full pipeline** — assembly → polishing → QC → HTML report
-2. **Assembly only**
-3. **QC only** — run on any existing FASTA
-4. **Compare genomes** — SNPs + dotplot between two assemblies
-
-### Command-line mode (for scripting / HPC)
-
-**Full assembly pipeline:**
-```bash
-funcat assemble reads.fastq.gz 40m \
-  --outdir my_assembly \
-  --threads 16 \
-  --read-type nano-hq \
-  --ploidy haploid
-```
-
-**QC an existing assembly:**
-```bash
-funcat qc assembly.fasta \
-  --telomere TTAGGG \
-  --name MyStrain
-```
-
-**Generate HTML report from any FASTA:**
-```bash
-funcat report assembly.fasta --name MyStrain
-```
-
-**Telomere-guided scaffolding (standalone):**
-```bash
-funcat telo-scaffold assembly.fasta reads.fastq.gz \
-  --outdir telo_out \
-  --motif TTAGGG
-```
-
-**SNP comparison between two assemblies:**
-```bash
-funcat snps reference.fasta query.fasta --outdir snp_out
-```
-
-**Batch pairwise comparison of a genome folder:**
-```bash
-funcat compare-folder genomes/ --outdir comparisons/ --threads 8
-```
-
----
-
-## Enhancement Modules
-
-When running the wizard in Full Pipeline or Assembly Only mode, you can select which enhancement modules to run:
-
-```
-============================================================
-⚙️   Enhancement modules — choose what to run
-============================================================
-  1) [ON ]  Adaptive Flye parameters        (< 1 min)
-  2) [ON ]  Iterative Medaka polishing      (+30–60 min)
-  3) [off]  Purge Duplicates [diploid only] (+15 min)
-  4) [off]  Repeat-aware scaffolding        (+20–40 min)
-  5) [off]  Telomere-guided scaffolding     (+10 min)
-  6) [ON ]  Contig confidence scoring       (+5 min)
-
-  A) Select all
-  D) Use recommended defaults
-  C) Continue with current selection
-```
-
-Toggle any module on or off by entering its number. Press `A` to select all, `D` to restore defaults, `C` to continue.
-
-
----
-
-## Read Types
-
-| Flag | Description | Polisher |
+| Flag | Reads | Polisher |
 |---|---|---|
-| `nano-hq` | Nanopore R10.4+, Q20 reads (default) | Medaka |
+| `nano-hq` | Nanopore R10.4+, Q20 (default) | Medaka |
 | `nano-raw` | Nanopore R9.4, standard accuracy | Medaka |
-| `pacbio-hifi` | PacBio HiFi / CCS reads | Racon |
+| `pacbio-hifi` | PacBio HiFi / CCS | Racon |
 
 ---
 
-## Ploidy Modes
-
-| Mode | When to use | Effect |
-|---|---|---|
-| `haploid` | Most filamentous fungi: *Aspergillus*, *Neurospora*, *Fusarium* | Standard assembly |
-| `diploid` | Heterozygous species: *Histoplasma*, *Candida*, *Cryptococcus* | Enables `--keep-haplotypes` in Flye; enables Purge Duplicates |
-
----
-
-## Output Files
-
-After a full pipeline run, your output directory will contain:
+## Output files
 
 ```
 outdir/
-├── final.fasta                    # Final polished, scaffolded, pruned assembly
-├── nuclear.fasta                  # Nuclear contigs (if mito separation ran)
-├── mitochondrial.fasta            # Mitochondrial contigs (if detected)
-├── final_funcat_report.html   # Self-contained HTML report (open in browser)
-├── flye/                          # Raw Flye assembly
-│   ├── assembly.fasta
-│   └── assembly_info.txt
-├── medaka/                        # Medaka polishing rounds
-│   └── round_1/consensus.fasta
-├── scaffolding/                   # Repeat-aware scaffolding output
-│   └── scaffolded.fasta
-├── telo_scaffolding/              # Telomere-guided scaffolding output
-│   └── telo_scaffolded.fasta
-├── confidence/                    # Per-contig confidence scores
-│   └── contig_confidence.tsv
-└── funcat_qc/                 # QC output
+├── final.fasta                  # Full assembly (all contigs)
+├── final_clean.fasta            # Clean assembly (FLAG contigs removed)
+├── nuclear.fasta                # Nuclear contigs only
+├── mitochondrial.fasta          # Mitochondrial contigs (if detected)
+├── final_funcat_report.html     # Self-contained HTML report
+├── confidence/
+│   └── contig_confidence.tsv   # Per-contig coverage scores
+└── fungalflye_qc/
     ├── stats.txt
-    ├── lengths.tsv
-    ├── length_histogram.png
-    └── telomeres.tsv
+    ├── telomeres.tsv
+    └── length_histogram.png
 ```
-
----
-
-## HTML Report
-
-After every full run or QC command, FunCAT generates a self-contained HTML report. No internet connection is required to view it.
-
-The report includes:
-- Assembly statistics (contigs, total size, N50, L50, mean GC)
-- Interactive contig length histogram
-- Cumulative assembly plot
-- GC content per contig
-- Telomere completeness heatmap (which chromosome ends are capped)
-- Contig confidence table (GOOD / REVIEW / FLAG with explanations)
-- Enhancement module summary
-
-Share it by sending the single `.html` file — it works offline in any modern browser.
-
-You can also generate a report on any FASTA at any time:
-```bash
-funcat report assembly.fasta --name StrainName --telomere TTAGGG
-```
-
----
-
-## Contig Confidence Scoring
-
-After assembly, FunCAT maps reads back and scores every contig:
-
-| Label | Meaning | Action |
-|---|---|---|
-| **GOOD** | Coverage uniform and expected | Use with confidence |
-| **REVIEW** | Uneven coverage (CV > 1.5) | Check before publishing |
-| **FLAG** | Coverage >1.8x median (collapsed repeat) or <0.2x (contamination) | Investigate before use |
-
-Results saved to `confidence/contig_confidence.tsv`.
-
-
----
-
-## Resumability
-
-Every step in the pipeline is checkpointed. If a run fails (power cut, memory error, missing tool), just re-run with the same output directory and the same settings — FunCAT will detect completed steps and skip them:
-
-```
-[funcat] Existing Flye assembly detected — skipping
-[funcat] Existing Medaka polish detected — skipping
-[funcat] Running scaffolding...   ← resumes here
-```
-
----
-
-## Tips for Better Assemblies
-
-**Coverage matters most.** FunCAT gets the most out of your data, but sequencing depth is the biggest single factor:
-
-| Coverage | Expected quality |
-|---|---|
-| < 20x | Fragmented, 50–200 contigs typical |
-| 30–50x | Good contiguity, chromosome-scale possible |
-| 60x+ | Chromosome-level for most fungal species |
-
-**Diploid fungi need Purge Duplicates.** If you are assembling *Histoplasma*, *Candida*, or any heterozygous species, enable Purge Duplicates in the enhancement menu. Without it, your assembly will contain both haplotypes as separate contigs, doubling the fragment count.
-
-**Use TTAGGG for most fungi.** When asked for a telomere motif, most fungal species including *Histoplasma*, *Aspergillus*, *Fusarium*, and *Candida* use the canonical TTAGGG motif. If your species is unusual, use auto-discovery or check the literature.
-
-**Min read length filter.** The wizard suggests a filter based on your read N50 × 0.7. At low coverage it is better to be conservative — keeping reads down to 1000 bp can help. At high coverage, stricter filtering (N50 × 0.8 or higher) improves assembly quality.
-
----
-
-## Dependencies
-
-| Tool | Purpose | Install |
-|---|---|---|
-| [Flye](https://github.com/fenderglass/Flye) | De novo assembly | `conda install -c bioconda flye` |
-| [Medaka](https://github.com/nanoporetech/medaka) | ONT polishing | `pip install medaka` |
-| [minimap2](https://github.com/lh3/minimap2) | Read mapping | `conda install -c bioconda minimap2` |
-| [seqkit](https://github.com/shenwei356/seqkit) | Read/assembly stats | `conda install -c bioconda seqkit` |
-| [filtlong](https://github.com/rrwick/Filtlong) | Read downsampling | `conda install -c bioconda filtlong` |
-| [samtools](https://github.com/samtools/samtools) | BAM handling (confidence scoring) | `conda install -c bioconda samtools` |
-| [purge_dups](https://github.com/dfguan/purge_dups) | Haplotig removal (diploid, optional) | `conda install -c bioconda purge_dups` |
-| [MUMmer](https://github.com/mummer4/mummer) | SNP comparison / dotplot (optional) | `conda install -c bioconda mummer` |
-| [Racon](https://github.com/lbcb-sci/racon) | PacBio polishing | `conda install -c bioconda racon` |
 
 ---
 
 ## Citation
 
-If you use FunCAT in published work, please cite the underlying tools:
+If you use FunCAT in published work, please cite:
 
+> Durazo J, et al. FunCAT: a purpose-built long-read assembly toolkit for fungal genomes. (2025) [Manuscript in preparation]
+
+Also cite the underlying tools:
 - **Flye:** Kolmogorov et al. (2019) *Nature Biotechnology*
-- **Medaka:** Oxford Nanopore Technologies — https://github.com/nanoporetech/medaka
+- **Medaka:** Oxford Nanopore Technologies
 - **minimap2:** Li (2018) *Bioinformatics*
 - **purge_dups:** Guan et al. (2020) *Genome Biology*
-
----
-
-## Contributing
-
-Issues and pull requests welcome at https://github.com/beyhanlab/FunCAT
 
 ---
 
@@ -342,7 +106,4 @@ Issues and pull requests welcome at https://github.com/beyhanlab/FunCAT
 
 MIT License — see [LICENSE](LICENSE) for details.
 
----
-
-*Developed by the Beyhan Lab*
-*Optimised for fungal genomics, with particular attention to Histoplasma capsulatum*
+*Developed by the Beyhan Lab, J. Craig Venter Institute*
