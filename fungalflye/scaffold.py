@@ -28,7 +28,7 @@ GAP_SEQUENCE = "N" * 100   # 100 Ns between joined contigs
 
 
 def run(cmd):
-    print(f"\n[fungalflye] Running: {cmd}\n")
+    print(f"\n[funcat] Running: {cmd}\n")
     subprocess.run(cmd, shell=True, check=True)
 
 

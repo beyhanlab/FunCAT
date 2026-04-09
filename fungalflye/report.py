@@ -225,7 +225,7 @@ def _build_html(stats, confidence_rows, telo_records, metadata):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FungalFlye Report — {assembly_name}</title>
+<title>FunCAT Report — {assembly_name}</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 :root {{
@@ -311,7 +311,7 @@ body {{ background: var(--bg); color: var(--text); font-family: var(--font);
 <div class="page">
 
   <div class="header">
-    <h1>🧬 FungalFlye Report — <span>{assembly_name}</span></h1>
+    <h1>🧬 FunCAT Report — <span>{assembly_name}</span></h1>
     <div class="meta">
       Generated <b>{now}</b> &nbsp;·&nbsp;
       Ploidy <b>{ploidy}</b> &nbsp;·&nbsp;

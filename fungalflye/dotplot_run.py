@@ -20,7 +20,7 @@ def run_dotplot(genome1_path, genome2_path, output_dir):
     genome1_name = genome1_path.stem
     genome2_name = genome2_path.stem
 
-    print(f"\n[fungalflye] Comparing {genome1_name} vs {genome2_name}")
+    print(f"\n[funcat] Comparing {genome1_name} vs {genome2_name}")
 
     alignment_output = output_dir / f"{genome1_name}_{genome2_name}"
 

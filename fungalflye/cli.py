@@ -69,25 +69,24 @@ def _default_wizard():
 
 app = typer.Typer(
     help=(
-        "FungalFlye — long-read fungal genome assembly toolkit\n\n"
+        "FunCAT — Fungal Chromosome Assembly Tool\n\n"
         "Developed by Jacob Durazo, Beyhan Lab, J. Craig Venter Institute\n\n"
         "GETTING STARTED:\n\n"
         "  Run the interactive wizard (recommended):\n\n"
-        "    fungalflye\n\n"
+        "    funcat\n\n"
         "  This guides you step-by-step through assembly, polishing,\n"
         "  scaffolding, QC, and HTML report generation.\n\n"
         "COMMON COMMANDS:\n\n"
-        "  fungalflye              Launch interactive wizard (full pipeline)\n"
-        "  fungalflye qc           Run QC + HTML report on any assembly FASTA\n"
-        "  fungalflye report       Generate a standalone HTML report\n"
-        "  fungalflye telo-scaffold  Attach telomeric fragments to chromosome ends\n\n"
-        "ILLUMINA POLISHING (NEW!):\n\n"
+        "  funcat              Launch interactive wizard (full pipeline)\n"
+        "  funcat qc           Run QC + HTML report on any assembly FASTA\n"
+        "  funcat report       Generate a standalone HTML report\n"
+        "  funcat telo-scaffold  Attach telomeric fragments to chromosome ends\n\n"
+        "ILLUMINA POLISHING:\n\n"
         "  Add Illumina reads for dramatically improved base accuracy:\n\n"
-        "    fungalflye assemble long_reads.fastq.gz 40m \\\n"
+        "    funcat assemble long_reads.fastq.gz 40m \\\n"
         "      --illumina-r1 illumina_R1.fastq.gz \\\n"
         "      --illumina-r2 illumina_R2.fastq.gz\n\n"
-        "  This reduces internal stop codons from ~22% to <5%!\n\n"
-        "Citation: Durazo J, et al. FungalFlye (2025) [Manuscript in preparation]"
+        "Citation: Durazo J, et al. FunCAT (2025) [Manuscript in preparation]"
     ),
     invoke_without_command=True,
 )

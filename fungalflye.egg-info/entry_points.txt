@@ -1,0 +1,3 @@
+[console_scripts]
+fungalflye = fungalflye.cli:app
+fungalflye-wizard = fungalflye.wizard:app

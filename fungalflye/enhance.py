@@ -21,7 +21,7 @@ from Bio import SeqIO
 # ------------------------------------------------
 
 def run(cmd):
-    print(f"\n[fungalflye] Running: {cmd}\n")
+    print(f"\n[funcat] Running: {cmd}\n")
     subprocess.run(cmd, shell=True, check=True)
 
 
@@ -492,3 +492,122 @@ def score_contig_confidence(assembly, reads, outdir, threads, minimap2_preset):
                 print(f"     {row['contig']} — {row['reason']}")
 
     return report
+
+
+# ================================================
+# MODULE 6 — Illumina polishing
+# ================================================
+
+def run_illumina_polishing(
+    assembly,
+    illumina_r1,
+    illumina_r2,
+    outdir,
+    threads,
+    polisher="polypolish"
+):
+    """
+    Polish a long-read assembly using Illumina short reads.
+    
+    Uses either Polypolish (default, recommended) or Pilon for polishing.
+    Significantly improves base accuracy and reduces internal stop codons.
+    
+    Returns path to polished assembly.
+    """
+    
+    print("\n" + "=" * 60)
+    print("🔬 Module 6 — Illumina polishing")
+    print(f"   Polisher: {polisher}")
+    print("=" * 60)
+    
+    polish_dir = Path(outdir) / "illumina_polish"
+    polish_dir.mkdir(exist_ok=True)
+    
+    polished_assembly = polish_dir / f"polished_{polisher}.fasta"
+    
+    if polished_assembly.exists():
+        print("[fungalflye] Existing Illumina polishing output detected — skipping")
+        return polished_assembly
+    
+    assembly = Path(assembly)
+    illumina_r1 = Path(illumina_r1)
+    illumina_r2 = Path(illumina_r2)
+    
+    # Check required tools
+    required_tools = ["bwa", "samtools"]
+    if polisher == "polypolish":
+        required_tools.extend(["polypolish", "polypolish_insert_filter"])
+    elif polisher == "pilon":
+        required_tools.append("pilon")
+    
+    missing_tools = [tool for tool in required_tools if shutil.which(tool) is None]
+    
+    if missing_tools:
+        print(f"\n⚠️  Missing tools for Illumina polishing: {missing_tools}")
+        if polisher == "polypolish":
+            print("   Install with: conda install -c bioconda polypolish bwa samtools")
+        else:
+            print("   Install with: conda install -c bioconda pilon bwa samtools")
+        print("   Skipping Illumina polishing — assembly will be unpolished\n")
+        return assembly
+    
+    print("\n[fungalflye] Step 1 — Indexing assembly for BWA")
+    run(f"bwa index {assembly}")
+    
+    print("[fungalflye] Step 2 — Mapping Illumina reads")
+    sam_r1 = polish_dir / "alignments_1.sam"
+    sam_r2 = polish_dir / "alignments_2.sam"
+    
+    run(f"bwa mem -t {threads} -a {assembly} {illumina_r1} > {sam_r1}")
+    run(f"bwa mem -t {threads} -a {assembly} {illumina_r2} > {sam_r2}")
+    
+    if polisher == "polypolish":
+        print("[fungalflye] Step 3 — Filtering alignments (Polypolish)")
+        filtered_r1 = polish_dir / "filtered_1.sam"
+        filtered_r2 = polish_dir / "filtered_2.sam"
+        
+        run(f"polypolish_insert_filter --in1 {sam_r1} --in2 {sam_r2} --out1 {filtered_r1} --out2 {filtered_r2}")
+        
+        print("[fungalflye] Step 4 — Polishing with Polypolish")
+        run(f"polypolish {assembly} {filtered_r1} {filtered_r2} > {polished_assembly}")
+        
+    elif polisher == "pilon":
+        print("[fungalflye] Step 3 — Converting to BAM and sorting")
+        bam_file = polish_dir / "illumina_mapped.bam"
+        
+        run(f"samtools view -bS {sam_r1} | samtools sort -@ {threads} -o {bam_file}")
+        run(f"samtools index {bam_file}")
+        
+        print("[fungalflye] Step 4 — Polishing with Pilon")
+        run(f"pilon --genome {assembly} --frags {bam_file} --output polished_pilon --outdir {polish_dir} --changes --threads {threads}")
+        
+        # Pilon outputs with different name
+        pilon_output = polish_dir / "polished_pilon.fasta"
+        if pilon_output.exists():
+            run(f"cp {pilon_output} {polished_assembly}")
+    
+    if not polished_assembly.exists():
+        print(f"⚠️  {polisher} polishing failed — using original assembly")
+        return assembly
+    
+    # Calculate improvement statistics
+    try:
+        original_size = sum(len(record.seq) for record in SeqIO.parse(str(assembly), "fasta"))
+        polished_size = sum(len(record.seq) for record in SeqIO.parse(str(polished_assembly), "fasta"))
+        size_change = polished_size - original_size
+        
+        print(f"\n✅ Illumina polishing complete")
+        print(f"   Polisher used    : {polisher}")
+        print(f"   Original size    : {original_size:,} bp")
+        print(f"   Polished size    : {polished_size:,} bp")
+        print(f"   Size change      : {size_change:+,} bp")
+        print(f"   Output assembly  : {polished_assembly}")
+        
+        # Suggest running BUSCO to check improvement
+        print(f"\n   💡 Tip: Run BUSCO on both assemblies to measure improvement:")
+        print(f"      Internal stop codons should drop significantly (22% → <5%)")
+        
+    except Exception as e:
+        print(f"✅ Illumina polishing complete (statistics calculation failed: {e})")
+    
+    return polished_assembly

@@ -3,16 +3,16 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fungalflye"
+name = "funcat"
 version = "0.3.0"
-description = "Long-read fungal genome assembly toolkit built on Flye and Medaka"
+description = "FunCAT — Fungal Chromosome Assembly Tool. Long-read fungal genome assembly toolkit built on Flye and Medaka"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
   { name = "Beyhan Lab" }
 ]
-keywords = ["bioinformatics", "genomics", "fungi", "assembly", "nanopore", "pacbio"]
+keywords = ["bioinformatics", "genomics", "fungi", "assembly", "nanopore", "pacbio", "funcat"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
@@ -29,13 +29,13 @@ dependencies = [
 ]
 
 [project.scripts]
-fungalflye        = "fungalflye.cli:app"
-fungalflye-wizard = "fungalflye.wizard:app"
+funcat        = "fungalflye.cli:app"
+funcat-wizard = "fungalflye.wizard:app"
 
 [project.urls]
-Homepage   = "https://github.com/beyhanlab/FungalFlye"
-Repository = "https://github.com/beyhanlab/FungalFlye"
-Issues     = "https://github.com/beyhanlab/FungalFlye/issues"
+Homepage   = "https://github.com/beyhanlab/FunCAT"
+Repository = "https://github.com/beyhanlab/FunCAT"
+Issues     = "https://github.com/beyhanlab/FunCAT/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

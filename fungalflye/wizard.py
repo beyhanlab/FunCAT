@@ -14,11 +14,11 @@ app = typer.Typer()
 BANNER = r"""
 ============================================================
 
-🧬🐉  FungalFlye  🐉🧬
-Long-read fungal genome assembly toolkit
+🧬🍄  FunCAT  🍄🧬
+Fungal Chromosome Assembly Tool
 Version 0.3  |  Beyhan Lab  |  J. Craig Venter Institute
 
-FungalFlye takes raw Nanopore or PacBio HiFi reads and
+FunCAT takes raw Nanopore or PacBio HiFi reads and
 produces chromosome-scale fungal genome assemblies through
 a fully automated pipeline. Starting from raw reads, it
 performs adaptive Flye assembly, iterative Medaka polishing,
@@ -29,13 +29,13 @@ with a self-contained HTML report — no manual configuration
 or bioinformatics expertise required.
 
 Developed by: Jacob Durazo
-Citation: Durazo J, et al. FungalFlye: a purpose-built
+Citation: Durazo J, et al. FunCAT: a purpose-built
   long-read assembly toolkit for fungal genomes. (2025)
   [Manuscript in preparation]
 
 ------------------------------------------------------------
   Quick start:  select 1 for the full assembly pipeline
-  Docs & code:  github.com/beyhanlab/FungalFlye
+  Docs & code:  github.com/beyhanlab/FunCAT
 ------------------------------------------------------------
 
 ============================================================
@@ -228,7 +228,7 @@ def wizard():
     check_dependencies(assembly_mode=False)
 
     typer.echo(BANNER)
-    typer.echo("Welcome to FungalFlye.\n")
+    typer.echo("Welcome to FunCAT.\n")
 
     while True:
 
@@ -243,7 +243,7 @@ def wizard():
         mode = typer.prompt("Enter choice", default="1")
 
         if mode == "6":
-            typer.echo("\nGoodbye 🐉\n")
+            typer.echo("\nGoodbye 🍄\n")
             return
 
         if mode not in ("1", "2", "3", "4", "5"):
@@ -472,7 +472,7 @@ def wizard():
         typer.echo("=" * 60)
         typer.echo(f"\nFinal assembly : {final_fasta}")
         typer.echo(f"Total runtime  : {elapsed / 60:.1f} minutes\n")
-        typer.echo("Thank you for using FungalFlye 🐉\n")
+        typer.echo("Thank you for using FunCAT 🍄\n")
 
         if not typer.confirm("Run another workflow?", default=False):
             return

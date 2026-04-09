@@ -57,7 +57,7 @@ DEFAULT_ENHANCEMENTS = {
 # ------------------------------------------------
 
 def run(cmd):
-    print(f"\n[fungalflye] Running: {cmd}\n")
+    print(f"\n[funcat] Running: {cmd}\n")
     subprocess.run(cmd, shell=True, check=True)
 
 
@@ -261,7 +261,7 @@ def run_assembly(
     reads_used = reads
 
     print("\n" + "=" * 60)
-    print("🧬 FungalFlye Assembly Pipeline")
+    print("🧬 FunCAT Assembly Pipeline")
     print("=" * 60)
     print(f"Read type : {cfg['label']}")
     print(f"Ploidy    : {ploidy}")

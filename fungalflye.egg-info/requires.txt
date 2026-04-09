@@ -1,0 +1,6 @@
+typer>=0.9
+biopython>=1.81
+pandas>=1.5
+matplotlib>=3.6
+decorator>=4.0
+scikit-learn
