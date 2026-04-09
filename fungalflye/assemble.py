@@ -454,11 +454,40 @@ def run_assembly(
 
     n_contigs = sum(1 for l in open(final_fasta) if l.startswith(">"))
 
+    # Auto-generate final_clean.fasta — removes FLAG contigs (collapsed repeats)
+    # This is the publication-ready file. final.fasta is kept intact as the full record.
+    confidence_tsv = outdir / "confidence" / "contig_confidence.tsv"
+    clean_fasta = outdir / "final_clean.fasta"
+    if confidence_tsv.exists():
+        flagged = set()
+        with open(confidence_tsv) as f:
+            headers = None
+            for line in f:
+                parts = line.strip().split("\t")
+                if headers is None:
+                    headers = parts; continue
+                row = dict(zip(headers, parts))
+                if row.get("label") == "FLAG":
+                    flagged.add(row["contig"])
+        if flagged:
+            kept = [r for r in SeqIO.parse(str(final_fasta), "fasta")
+                    if r.id not in flagged]
+            SeqIO.write(kept, str(clean_fasta), "fasta")
+            n_clean = len(kept)
+            print(f"\n[fungalflye] Auto-generated clean assembly (FLAG contigs removed):")
+            print(f"   Removed : {', '.join(sorted(flagged))} ({len(flagged)} collapsed repeats)")
+            print(f"   Kept    : {n_clean} contigs → {clean_fasta}")
+        else:
+            shutil.copy(final_fasta, clean_fasta)
+            print(f"\n[fungalflye] No FLAG contigs — final_clean.fasta identical to final.fasta")
+
     print("\n" + "=" * 60)
     print("✅ Assembly Complete")
     print("=" * 60)
-    print(f"Final assembly : {final_fasta}")
-    print(f"Contigs        : {n_contigs}")
+    print(f"Final assembly       : {final_fasta}  ({n_contigs} contigs, full record)")
+    if clean_fasta.exists():
+        n_clean = sum(1 for l in open(clean_fasta) if l.startswith(">"))
+        print(f"Clean assembly       : {clean_fasta}  ({n_clean} contigs, FLAG removed)")
     print(f"Contig cutoff  : {min_contig_size} bp")
     print(f"Ploidy         : {ploidy}")
     print("=" * 60 + "\n")
