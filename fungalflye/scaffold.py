@@ -394,6 +394,78 @@ def run_scaffold(
     print("\n[fungalflye] Building scaffolds...")
     scaffolds = _build_scaffolds(records_dict, join_support, min_support)
 
+    # ── Small contig rescue pass ──────────────────────────────────────────
+    # After the main scaffolding, check if any small GOOD contigs (<2Mb)
+    # remain unjoined. These are likely subtelomeric fragments that had too
+    # few bridging reads to pass the coverage-scaled min_support threshold.
+    # Re-examine the PAF with a much lower threshold (min 3 reads) restricted
+    # ONLY to joins between a small unjoined contig and a large contig (>=2Mb).
+    # This prevents false joins between two small fragments while still
+    # rescuing genuine chromosome-tip attachments.
+
+    RESCUE_MAX_SMALL   = 1_000_000   # contigs smaller than 1Mb are rescue candidates
+    RESCUE_MIN_LARGE   = 2_000_000   # must attach to a contig at least 2Mb (real chromosome body)
+    RESCUE_MIN_SUPPORT = 3           # lower threshold for rescue pass only
+
+    # Find which contigs are still unjoined after main scaffolding
+    joined_ids = set()
+    for s in scaffolds:
+        if s.description and "joined" in s.description:
+            for part in s.description.split(": ")[-1].split(" + "):
+                joined_ids.add(part.strip())
+
+    small_unjoined = {
+        cid for cid, length in contig_lengths.items()
+        if length < RESCUE_MAX_SMALL
+        and cid not in flagged_contigs
+        and cid not in joined_ids
+    }
+    large_contigs = {
+        cid for cid, length in contig_lengths.items()
+        if length >= RESCUE_MIN_LARGE
+        and cid not in flagged_contigs
+    }
+
+    if small_unjoined and large_contigs:
+        print(f"\n[fungalflye] Small contig rescue pass:")
+        print(f"   Candidates : {len(small_unjoined)} small unjoined contigs")
+        print(f"   Targets    : {len(large_contigs)} large chromosome-body contigs")
+
+        # Re-parse PAF with rescue thresholds
+        rescue_support = _parse_paf(
+            paf, contig_lengths,
+            end_window=end_window,
+            min_mapq=30,
+            min_read_span_fraction=0.5,   # more lenient — subtelomeric reads are harder
+            flagged_contigs=flagged_contigs,
+        )
+
+        # Filter to only small↔large joins with >= RESCUE_MIN_SUPPORT
+        rescue_joins = {}
+        for key, support in rescue_support.items():
+            (a, a_side), (b, b_side) = key
+            if support < RESCUE_MIN_SUPPORT:
+                continue
+            small_to_large = (a in small_unjoined and b in large_contigs)
+            large_to_small = (b in small_unjoined and a in large_contigs)
+            if small_to_large or large_to_small:
+                rescue_joins[key] = support
+
+        if rescue_joins:
+            print(f"   Found {len(rescue_joins)} rescue join(s):")
+            for key, support in sorted(rescue_joins.items(), key=lambda x: x[1], reverse=True):
+                (a, a_side), (b, b_side) = key
+                print(f"     {a}({a_side}) ↔ {b}({b_side})  [{support} reads]")
+
+            # Rebuild scaffolds including rescue joins
+            combined_support = dict(join_support)
+            combined_support.update(rescue_joins)
+            scaffolds = _build_scaffolds(records_dict, combined_support, RESCUE_MIN_SUPPORT)
+            print(f"   After rescue: {len(scaffolds)} contigs/scaffolds")
+        else:
+            print(f"   No rescue joins found — small contigs remain as fragments")
+    # ── end rescue pass ───────────────────────────────────────────────────
+
     # Write output
     SeqIO.write(scaffolds, str(scaffolded_fasta), "fasta")
 
