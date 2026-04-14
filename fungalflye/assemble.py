@@ -389,7 +389,7 @@ def run_assembly(
             threads=threads,
             minimap2_preset=cfg["minimap2_preset"],
             min_support=None,   # auto-scaled from coverage
-            end_window=2000,
+            end_window=5000,
             confidence_tsv=str(confidence_tsv) if confidence_tsv.exists() else None,
         )
 

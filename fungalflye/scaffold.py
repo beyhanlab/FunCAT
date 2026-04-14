@@ -279,7 +279,7 @@ def run_scaffold(
     threads,
     minimap2_preset,
     min_support=None,
-    end_window=2000,
+    end_window=5000,
     confidence_tsv=None,
 ):
     """
@@ -521,7 +521,7 @@ def run_telomere_scaffolding(
     minimap2_preset,
     telomere_motif="TTAGGG",
     min_support=5,
-    end_window=500,
+    end_window=1000,
     telo_window=3000,
     min_telo_repeats=3,
 ):
