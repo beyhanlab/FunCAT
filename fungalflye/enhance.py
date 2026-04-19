@@ -148,20 +148,43 @@ def suggest_flye_params(reads, genome_size_bp, threads=8):
 # MODULE 2 — Iterative Medaka polishing
 # ================================================
 
-def _count_variants(vcf_path):
-    """Count PASS variant calls in a Medaka VCF."""
-    count = 0
+def _count_changes(before_fasta, after_fasta, threads=4):
+    """
+    Count sequence-level changes between two assemblies using minimap2 asm5.
+    Works with Medaka 2.x which no longer outputs VCF files.
+
+    Aligns before → after, sums mismatches and indels from the cs tag.
+    Returns total number of corrected bases (substitutions + indels).
+    Falls back to 0 if minimap2 is unavailable or alignment fails.
+    """
+    import subprocess
+    import re
+
     try:
-        with open(vcf_path) as f:
-            for line in f:
-                if line.startswith("#"):
-                    continue
-                parts = line.strip().split("\t")
-                if len(parts) >= 7 and parts[6] == "PASS":
-                    count += 1
-    except FileNotFoundError:
-        pass
-    return count
+        result = subprocess.run(
+            [
+                "minimap2", "-x", "asm5",
+                "--cs", "-t", str(threads),
+                str(before_fasta), str(after_fasta),
+            ],
+            capture_output=True, text=True, timeout=300,
+        )
+        changes = 0
+        for line in result.stdout.splitlines():
+            if line.startswith("S") or line.startswith("#"):
+                continue
+            cols = line.strip().split("\t")
+            # Parse cs tag — count mismatches (*) and indels (+ -)
+            for col in cols:
+                if col.startswith("cs:Z:"):
+                    cs = col[5:]
+                    # substitutions: *XY  insertions: +seq  deletions: -seq
+                    changes += len(re.findall(r'\*[acgtACGT]{2}', cs))
+                    changes += sum(len(m) - 1 for m in re.findall(r'\+[acgtACGT]+', cs))
+                    changes += sum(len(m) - 1 for m in re.findall(r'-[acgtACGT]+', cs))
+        return changes
+    except Exception:
+        return 0
 
 
 def run_medaka_iterative(
@@ -182,7 +205,7 @@ def run_medaka_iterative(
 
     print("\n" + "=" * 60)
     print("🔬 Module 2 — Iterative Medaka polishing")
-    print(f"   Max rounds: {max_rounds}  |  Convergence threshold: {convergence_threshold} variants")
+    print(f"   Max rounds: {max_rounds}  |  Convergence threshold: {convergence_threshold} base corrections")
     print("=" * 60)
 
     current = Path(assembly)
@@ -221,6 +244,9 @@ def run_medaka_iterative(
 
         round_dir.mkdir(exist_ok=True)
 
+        # Snapshot the input so we can compare before/after for convergence
+        current_before_polish = current
+
         run(
             f"medaka_consensus "
             f"-i {reads} "
@@ -233,19 +259,20 @@ def run_medaka_iterative(
         if not polished.exists():
             raise RuntimeError(f"Medaka round {round_num} failed")
 
-        # Count variants to detect convergence
-        vcf_files = list(round_dir.glob("*.vcf"))
-        variants_this_round = sum(_count_variants(v) for v in vcf_files)
+        # Count sequence changes between input and polished assembly.
+        # Uses direct FASTA comparison via minimap2 asm5 — compatible with
+        # Medaka 2.x which no longer outputs VCF files.
+        changes_this_round = _count_changes(current_before_polish, polished, threads=threads)
 
         print(
             f"[funcat] Round {round_num} complete — "
-            f"{variants_this_round} variants corrected"
+            f"{changes_this_round} bases corrected"
         )
 
         # Save state for resumability
         state = {
             "last_round": round_num,
-            "last_variants": variants_this_round,
+            "last_variants": changes_this_round,
             "current_fasta": str(polished),
         }
         state_file.write_text(json.dumps(state, indent=2))
@@ -253,23 +280,23 @@ def run_medaka_iterative(
         current = polished
         final_fasta = polished
 
-        # Convergence check
-        if variants_this_round <= convergence_threshold:
+        # Convergence check — stop if corrections fall below threshold
+        if changes_this_round <= convergence_threshold:
             print(
                 f"\n✅ Converged after round {round_num} "
-                f"({variants_this_round} variants ≤ threshold {convergence_threshold})"
+                f"({changes_this_round} bases corrected ≤ threshold {convergence_threshold})"
             )
             break
 
         if last_variants is not None:
-            improvement = last_variants - variants_this_round
+            improvement = last_variants - changes_this_round
             if improvement <= 0:
                 print(
                     f"\n✅ No further improvement after round {round_num} — stopping"
                 )
                 break
 
-        last_variants = variants_this_round
+        last_variants = changes_this_round
 
     if final_fasta is None:
         raise RuntimeError("Medaka polishing produced no output")
