@@ -87,14 +87,26 @@ def suggest_flye_params(reads, genome_size_bp, threads=8):
     reasoning = []
 
     # --- min-overlap ---
-    # Rule: min_overlap ≈ 0.5 × read_n50, capped between 1000 and 10000
-    raw_overlap = int(read_n50 * 0.5)
-    min_overlap = max(1000, min(raw_overlap, 10000))
+    # Rule: Conservative min_overlap for PacBio HiFi, more aggressive for ONT
+    # PacBio HiFi has better accuracy, so can use lower overlaps safely
+    if "hifi" in str(reads).lower() or mean_gc > 45:
+        # PacBio HiFi or high-GC genome (typical of PacBio)
+        raw_overlap = max(3000, int(read_n50 * 0.1))
+        min_overlap = min(raw_overlap, 5000)
+        reasoning.append(
+            f"  --min-overlap {min_overlap}  "
+            f"(PacBio HiFi detected: conservative 0.1 × read N50, capped at 5k)"
+        )
+    else:
+        # Nanopore or uncertain - use higher overlap
+        raw_overlap = int(read_n50 * 0.3)
+        min_overlap = max(1000, min(raw_overlap, 8000))
+        reasoning.append(
+            f"  --min-overlap {min_overlap}  "
+            f"(Nanopore: 0.3 × read N50 {read_n50:,}, capped 1k–8k)"
+        )
+    
     params["min_overlap"] = min_overlap
-    reasoning.append(
-        f"  --min-overlap {min_overlap}  "
-        f"(0.5 × read N50 {read_n50:,}, capped 1k–10k)"
-    )
 
     # --- asm-coverage ---
     # Rule: cap at actual coverage if lower than default 60x
@@ -159,8 +171,23 @@ def _count_changes(before_fasta, after_fasta, threads=4):
     """
     import subprocess
     import re
+    from pathlib import Path
 
     try:
+        # Ensure both files exist and are valid
+        if not Path(before_fasta).exists() or not Path(after_fasta).exists():
+            print(f"[funcat] Warning: Input files missing for convergence check")
+            return 0
+            
+        # Check file sizes to ensure they're real assemblies
+        before_size = Path(before_fasta).stat().st_size
+        after_size = Path(after_fasta).stat().st_size
+        if before_size < 1000 or after_size < 1000:
+            print(f"[funcat] Warning: Assembly files too small for comparison")
+            return 0
+
+        print(f"[funcat] Comparing {Path(before_fasta).name} → {Path(after_fasta).name}")
+        
         result = subprocess.run(
             [
                 "minimap2", "-x", "asm5",
@@ -169,21 +196,41 @@ def _count_changes(before_fasta, after_fasta, threads=4):
             ],
             capture_output=True, text=True, timeout=300,
         )
+        
+        if result.returncode != 0:
+            print(f"[funcat] Warning: minimap2 alignment failed: {result.stderr}")
+            return 0
+            
         changes = 0
+        alignments = 0
+        
         for line in result.stdout.splitlines():
-            if line.startswith("S") or line.startswith("#"):
+            if line.startswith("#"):
                 continue
             cols = line.strip().split("\t")
+            if len(cols) < 12:
+                continue
+                
+            alignments += 1
+            
             # Parse cs tag — count mismatches (*) and indels (+ -)
             for col in cols:
                 if col.startswith("cs:Z:"):
                     cs = col[5:]
                     # substitutions: *XY  insertions: +seq  deletions: -seq
-                    changes += len(re.findall(r'\*[acgtACGT]{2}', cs))
-                    changes += sum(len(m) - 1 for m in re.findall(r'\+[acgtACGT]+', cs))
-                    changes += sum(len(m) - 1 for m in re.findall(r'-[acgtACGT]+', cs))
+                    substitutions = len(re.findall(r'\*[acgtACGT]{2}', cs))
+                    insertions = sum(len(m) - 1 for m in re.findall(r'\+[acgtACGT]+', cs))
+                    deletions = sum(len(m) - 1 for m in re.findall(r'-[acgtACGT]+', cs))
+                    changes += substitutions + insertions + deletions
+                    
+        print(f"[funcat] Found {changes} sequence differences across {alignments} alignments")
         return changes
-    except Exception:
+        
+    except subprocess.TimeoutExpired:
+        print(f"[funcat] Warning: Convergence check timed out")
+        return 0
+    except Exception as e:
+        print(f"[funcat] Warning: Convergence check failed: {e}")
         return 0
 
 

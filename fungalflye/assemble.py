@@ -13,6 +13,7 @@ from .enhance import (
     run_illumina_polishing,
 )
 from .scaffold import run_scaffold, run_telomere_scaffolding
+from .logger import init_logger, log_command, log_module_start, log_module_end, log_error, finalize_log
 
 
 # ------------------------------------------------
@@ -58,6 +59,7 @@ DEFAULT_ENHANCEMENTS = {
 
 def run(cmd):
     print(f"\n[funcat] Running: {cmd}\n")
+    log_command(cmd)  # Log all commands
     subprocess.run(cmd, shell=True, check=True)
 
 
@@ -249,6 +251,9 @@ def run_assembly(
     outdir = Path(outdir)
     outdir.mkdir(exist_ok=True)
     reads = Path(reads)
+
+    # Initialize comprehensive logging
+    logger = init_logger(outdir)
 
     flye_dir        = outdir / "flye"
     filtered_reads  = outdir / "reads.filtered.fastq.gz"
@@ -442,6 +447,9 @@ def run_assembly(
     else:
         print("[funcat] Final assembly already exists")
 
+    # Log final assembly statistics
+    logger.log_assembly_stats(final_fasta)
+
     # MODULE 4 — Confidence scoring
     if enhancements.get("confidence_scoring"):
         score_contig_confidence(
@@ -491,5 +499,8 @@ def run_assembly(
     print(f"Contig cutoff  : {min_contig_size} bp")
     print(f"Ploidy         : {ploidy}")
     print("=" * 60 + "\n")
+
+    # Finalize comprehensive log
+    finalize_log()
 
     return str(final_fasta)

@@ -488,8 +488,14 @@ def revcomp(s):
     return s.upper().translate(table)[::-1]
 
 
-def _scan_telo_signal(seq, motif, window=3000, min_repeats=3):
-    """Return (start_has_telo, end_has_telo) for a sequence."""
+def _scan_telo_signal(seq, motif, window=3000, min_repeats=2):
+    """Return (start_has_telo, end_has_telo) for a sequence.
+    
+    More permissive telomere detection:
+    - Allows 1 mismatch per repeat unit
+    - Checks both forward and reverse complement orientations
+    - Accepts 2+ consecutive repeats (was 3+)
+    """
     rc = revcomp(motif)
     m  = len(motif)
 
@@ -499,9 +505,13 @@ def _scan_telo_signal(seq, motif, window=3000, min_repeats=3):
             run, j = 0, i
             while j + m <= len(s):
                 unit = s[j:j+m]
-                if sum(x != y for x, y in zip(unit, motif)) <= 1 or \
-                   sum(x != y for x, y in zip(unit, rc))    <= 1:
-                    run += 1; j += m
+                # Allow 1 mismatch per repeat unit
+                forward_mismatches = sum(x != y for x, y in zip(unit, motif))
+                reverse_mismatches = sum(x != y for x, y in zip(unit, rc))
+                
+                if forward_mismatches <= 1 or reverse_mismatches <= 1:
+                    run += 1
+                    j += m
                 else:
                     break
             best = max(best, run)
@@ -520,10 +530,10 @@ def run_telomere_scaffolding(
     threads,
     minimap2_preset,
     telomere_motif="TTAGGG",
-    min_support=5,
-    end_window=1000,
+    min_support=3,           # Lowered from 5
+    end_window=2000,         # Increased from 1000
     telo_window=3000,
-    min_telo_repeats=3,
+    min_telo_repeats=2,      # Lowered from 3
 ):
     """
     Telomere-guided scaffolding.

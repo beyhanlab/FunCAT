@@ -8,6 +8,7 @@ from .qc import run_qc, discover_telomere_motif
 from .cli import analyze_reads, preview_filter
 from .compare import run_snp_analysis
 from .dotplot_run import run_dotplot
+from .logger import log_user_selection
 
 app = typer.Typer()
 
@@ -46,43 +47,36 @@ ENHANCEMENT_MENU = {
         "label": "Adaptive Flye parameters",
         "desc":  "Analyses your reads and auto-tunes Flye settings",
         "default": True,
-        "time":  "< 1 min",
     },
     "iterative_polish": {
         "label": "Iterative Medaka polishing",
         "desc":  "Polishes up to 3 rounds, stops when assembly converges",
         "default": True,
-        "time":  "+30–60 min",
     },
     "purge_dups": {
         "label": "Purge Duplicates  [diploid only]",
         "desc":  "Removes haplotig duplicates — dramatically improves diploid assemblies",
         "default": False,
-        "time":  "+15 min",
     },
     "scaffolding": {
         "label": "Repeat-aware scaffolding",
         "desc":  "Uses long reads to bridge contig gaps at repeat boundaries",
         "default": False,
-        "time":  "+20–40 min",
     },
     "telo_scaffolding": {
         "label": "Telomere-guided scaffolding",
         "desc":  "Attaches small telomeric fragments to chromosome ends",
         "default": False,
-        "time":  "+10 min",
     },
     "confidence_scoring": {
         "label": "Contig confidence scoring",
         "desc":  "Flags suspicious contigs (collapsed repeats, contamination)",
         "default": True,
-        "time":  "+5 min",
     },
     "illumina_polish": {
         "label": "Illumina polishing  [requires short reads]",
         "desc":  "Polish with Illumina reads after Medaka — dramatically reduces stop codons",
         "default": False,
-        "time":  "+20–40 min",
     },
 }
 
@@ -125,7 +119,7 @@ def get_ploidy() -> str:
 
 def get_enhancements(ploidy: str) -> dict:
     """
-    Interactive feature selection menu.
+    Interactive feature selection menu with step navigation.
     Returns dict of {feature_key: bool}.
     """
     keys   = list(ENHANCEMENT_MENU.keys())
@@ -152,18 +146,21 @@ def get_enhancements(ploidy: str) -> dict:
                 )
             else:
                 typer.echo(
-                    f"  {i}) [{status}]  {m['label']}  "
-                    f"({m['time']})  — {m['desc']}"
+                    f"  {i}) [{status}]  {m['label']} — {m['desc']}"
                 )
 
         typer.echo("\n  A) Select all")
         typer.echo("  D) Use recommended defaults  [adaptive + iterative polish + confidence]")
         typer.echo("  C) Continue with current selection")
+        typer.echo("  B) Back to previous step")
 
-        choice = typer.prompt("\nEnter number to toggle, or A / D / C", default="C").strip().upper()
+        choice = typer.prompt("\nEnter number to toggle, or A / D / C / B", default="C").strip().upper()
 
         if choice == "C":
             break
+
+        if choice == "B":
+            return "BACK_TO_PREVIOUS"
 
         if choice == "A":
             for k in keys:
@@ -189,7 +186,7 @@ def get_enhancements(ploidy: str) -> dict:
                 state = "ON" if active[key] else "off"
                 typer.echo(f"  → {ENHANCEMENT_MENU[key]['label']} set to {state}")
         except (ValueError, IndexError):
-            typer.echo("Invalid choice — enter a number, A, D, or C")
+            typer.echo("Invalid choice — enter a number, A, D, C, or B")
 
     active_names = [ENHANCEMENT_MENU[k]["label"] for k, v in active.items() if v]
     typer.echo(f"\n✅ Running with: {', '.join(active_names) if active_names else 'no enhancements'}")
@@ -334,36 +331,48 @@ def wizard():
                 return
             continue
 
-        # ASSEMBLY / FULL PIPELINE
-        reads  = typer.prompt("Path to raw reads", value_proc=path_exists)
-        gsize  = normalize_gsize(typer.prompt("Genome size (e.g. 40m, 1.2g)", default="40m"))
-        outdir = typer.prompt("Output folder", default="funcat_out")
-        threads = typer.prompt("Threads", default=8, type=int)
+        # ASSEMBLY / FULL PIPELINE - main wizard flow with step navigation
+        while True:  # Main navigation loop
+            reads  = typer.prompt("Path to raw reads", value_proc=path_exists)
+            gsize  = normalize_gsize(typer.prompt("Genome size (e.g. 40m, 1.2g)", default="40m"))
+            outdir = typer.prompt("Output folder", default="funcat_out")
+            threads = typer.prompt("Threads", default=8, type=int)
 
-        read_type = get_read_type()
-        ploidy    = get_ploidy()
+            read_type = get_read_type()
+            ploidy    = get_ploidy()
 
-        # Enhancement selection
-        enhancements = get_enhancements(ploidy)
+            # Enhancement selection with navigation support
+            while True:
+                enhancements = get_enhancements(ploidy)
+                if enhancements != "BACK_TO_PREVIOUS":
+                    break
+                # If user went back, re-prompt for ploidy
+                ploidy = get_ploidy()
+            
+            if not isinstance(enhancements, dict):
+                continue  # Something went wrong, restart main loop
 
-        asm_coverage = 60  # handled automatically by adaptive params module
+            asm_coverage = 60  # handled automatically by adaptive params module
 
-        Path(outdir).mkdir(exist_ok=True)
+            Path(outdir).mkdir(exist_ok=True)
 
-        if (Path(outdir) / "final.fasta").exists():
-            typer.echo("\n⚠️  Existing assembly detected — pipeline will resume.\n")
+            if (Path(outdir) / "final.fasta").exists():
+                typer.echo("\n⚠️  Existing assembly detected — pipeline will resume.\n")
 
-        typer.echo("\n🧾 Assembly plan:")
-        typer.echo(f"  Reads       : {reads}")
-        typer.echo(f"  Genome size : {gsize}")
-        typer.echo(f"  Read type   : {READ_TYPE_CONFIGS[read_type]['label']}")
-        typer.echo(f"  Ploidy      : {ploidy}")
-        typer.echo(f"  Threads     : {threads}")
-        typer.echo(f"  Outdir      : {outdir}")
+            typer.echo("\n🧾 Assembly plan:")
+            typer.echo(f"  Reads       : {reads}")
+            typer.echo(f"  Genome size : {gsize}")
+            typer.echo(f"  Read type   : {READ_TYPE_CONFIGS[read_type]['label']}")
+            typer.echo(f"  Ploidy      : {ploidy}")
+            typer.echo(f"  Threads     : {threads}")
+            typer.echo(f"  Outdir      : {outdir}")
 
-        if not typer.confirm("\nReady to analyze reads — continue?", default=True):
-            abort()
-            continue
+            if not typer.confirm("\nReady to analyze reads — continue?", default=True):
+                typer.echo("\n⚠️  Going back to main menu.\n")
+                break  # Exit to main menu
+
+            # Continue with existing workflow...
+            break  # Exit navigation loop to proceed
 
         typer.echo("\n🔎 Step 1 — Read diagnostics\n")
         total_reads, total_bases, read_n50, lengths = analyze_reads(reads, outdir)
