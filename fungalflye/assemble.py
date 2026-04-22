@@ -303,7 +303,7 @@ def run_assembly(
     flye_params = {}
     if enhancements.get("adaptive_params"):
         genome_bp = parse_genome_size(genome_size)
-        flye_params = suggest_flye_params(reads_used, genome_bp, threads)
+        flye_params = suggest_flye_params(reads_used, genome_bp, threads, read_type=read_type)
         if "asm_coverage" in flye_params:
             asm_coverage = flye_params["asm_coverage"]
 

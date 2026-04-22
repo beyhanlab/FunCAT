@@ -34,10 +34,12 @@ def run_capture(cmd):
 # MODULE 1 — Adaptive Flye parameter selection
 # ================================================
 
-def suggest_flye_params(reads, genome_size_bp, threads=8):
+def suggest_flye_params(reads, genome_size_bp, threads=8, read_type=None):
     """
     Analyse reads and return optimised Flye parameters as a dict.
     Prints a human-readable explanation of every decision made.
+    
+    read_type: "pacbio-hifi", "nano-hq", "nano-raw" - overrides detection
     """
 
     print("\n" + "=" * 60)
@@ -86,19 +88,18 @@ def suggest_flye_params(reads, genome_size_bp, threads=8):
     params = {}
     reasoning = []
 
-    # --- min-overlap ---
-    # Rule: Conservative min_overlap for PacBio HiFi, more aggressive for ONT
-    # PacBio HiFi has better accuracy, so can use lower overlaps safely
-    if "hifi" in str(reads).lower() or mean_gc > 45:
-        # PacBio HiFi or high-GC genome (typical of PacBio)
+    # --- min-overlap with proper read type detection ---
+    # Use command-line read_type parameter instead of filename guessing
+    if read_type == "pacbio-hifi":
+        # PacBio HiFi: conservative overlap, high accuracy allows smaller overlaps
         raw_overlap = max(3000, int(read_n50 * 0.1))
         min_overlap = min(raw_overlap, 5000)
         reasoning.append(
             f"  --min-overlap {min_overlap}  "
-            f"(PacBio HiFi detected: conservative 0.1 × read N50, capped at 5k)"
+            f"(PacBio HiFi: conservative 0.1 × read N50, capped at 5k)"
         )
     else:
-        # Nanopore or uncertain - use higher overlap
+        # Nanopore: higher overlap needed due to lower base accuracy
         raw_overlap = int(read_n50 * 0.3)
         min_overlap = max(1000, min(raw_overlap, 8000))
         reasoning.append(
