@@ -313,7 +313,7 @@ def run_assembly(
         print("[funcat] Existing Flye assembly detected — skipping")
     else:
         print(f"\n[funcat] Running Flye ({ploidy} mode)")
-        min_overlap = flye_params.get("min_overlap", "")
+        min_overlap = flye_params.get("min_overlap")  # May be None (auto-select)
         iterations  = flye_params.get("iterations", 3)
         overlap_flag = f"--min-overlap {min_overlap}" if min_overlap else ""
         hap_flag = "--keep-haplotypes" if ploidy == "diploid" else ""

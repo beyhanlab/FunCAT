@@ -88,26 +88,69 @@ def suggest_flye_params(reads, genome_size_bp, threads=8, read_type=None):
     params = {}
     reasoning = []
 
-    # --- min-overlap with proper read type detection ---
-    # Use command-line read_type parameter instead of filename guessing
-    if read_type == "pacbio-hifi":
-        # PacBio HiFi: conservative overlap, high accuracy allows smaller overlaps
-        raw_overlap = max(3000, int(read_n50 * 0.1))
-        min_overlap = min(raw_overlap, 5000)
-        reasoning.append(
-            f"  --min-overlap {min_overlap}  "
-            f"(PacBio HiFi: conservative 0.1 × read N50, capped at 5k)"
-        )
-    else:
-        # Nanopore: higher overlap needed due to lower base accuracy
-        raw_overlap = int(read_n50 * 0.3)
-        min_overlap = max(1000, min(raw_overlap, 8000))
-        reasoning.append(
-            f"  --min-overlap {min_overlap}  "
-            f"(Nanopore: 0.3 × read N50 {read_n50:,}, capped 1k–8k)"
-        )
+def suggest_flye_params(reads, genome_size_bp, threads=8, read_type=None):
+    """
+    Analyse reads and return optimised Flye parameters as a dict.
+    Prints a human-readable explanation of every decision made.
     
-    params["min_overlap"] = min_overlap
+    read_type: "pacbio-hifi", "nano-hq", "nano-raw" - overrides detection
+    """
+
+    print("\n" + "=" * 60)
+    print("🔬 Module 1 — Adaptive parameter selection")
+    print("=" * 60)
+
+    # --- read stats via seqkit ---
+    print("\n[funcat] Analysing read characteristics...")
+
+    stats_raw = run_capture(
+        f"seqkit fx2tab -n -l -g {reads} 2>/dev/null"
+    )
+
+    lengths = []
+    gcs = []
+
+    for line in stats_raw.splitlines():
+        parts = line.strip().split("\t")
+        if len(parts) >= 3:
+            try:
+                lengths.append(int(parts[1]))
+                gcs.append(float(parts[2]))
+            except ValueError:
+                pass
+
+    if not lengths:
+        print("[funcat] ⚠️  Could not parse read stats — using defaults")
+        return {}
+
+    total_bases = sum(lengths)
+    coverage = total_bases / genome_size_bp
+    mean_gc = sum(gcs) / len(gcs) if gcs else 50.0
+
+    sorted_len = sorted(lengths, reverse=True)
+    cumsum, read_n50 = 0, 0
+    for L in sorted_len:
+        cumsum += L
+        if cumsum >= total_bases / 2:
+            read_n50 = L
+            break
+
+    print(f"\n  Read N50       : {read_n50:,} bp")
+    print(f"  Est. coverage  : {coverage:.1f}x")
+    print(f"  Mean GC        : {mean_gc:.1f}%")
+
+    params = {}
+    reasoning = []
+
+    # --- min-overlap: Let Flye auto-select (recommended approach) ---
+    # Flye's automatic selection based on N90 is more reliable than manual calculation
+    # According to Flye documentation: "this parameter is chosen automatically based on 
+    # the read length distribution (reads N90) and does not require manual setting"
+    reasoning.append(
+        f"  --min-overlap [auto]  "
+        f"(Flye auto-selection based on read N90 - more reliable than manual override)"
+    )
+    # Don't set min_overlap parameter - let Flye handle it
 
     # --- asm-coverage ---
     # Rule: cap at actual coverage if lower than default 60x
