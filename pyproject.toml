@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
+  { name = "Jacob Durazo" },
   { name = "Beyhan Lab" }
 ]
 keywords = ["bioinformatics", "genomics", "fungi", "assembly", "nanopore", "pacbio", "funcat"]
@@ -19,13 +20,16 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 
+# Python-level dependencies only.
+# Bioinformatics tools (flye, minimap2, medaka, samtools, etc.)
+# must be installed via conda using environment.yml — they are
+# not pip-installable and are NOT listed here.
 dependencies = [
   "typer>=0.9",
   "biopython>=1.81",
   "pandas>=1.5",
   "matplotlib>=3.6",
   "decorator>=4.0",
-  "scikit-learn",
 ]
 
 [project.scripts]

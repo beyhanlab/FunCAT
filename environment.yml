@@ -5,22 +5,41 @@ channels:
   - defaults
 dependencies:
   - python=3.10
+
+  # ── Core assembly tools ────────────────────────────────────────────────
   - flye
   - minimap2
-  - racon
   - seqkit
   - filtlong
-  - samtools
-  - purge_dups
-  - mummer
-  - bwa
-  - polypolish
-  - pandas
-  - matplotlib
-  - biopython
-  - scikit-learn
-  - typer
+
+  # ── Alignment / BAM handling ───────────────────────────────────────────
+  # samtools must be >=1.17 — older versions (e.g. 0.1.19) lack commands
+  # required by Medaka and confidence scoring (samtools depth -a, sort -@)
+  - samtools>=1.17
+  - bcftools           # required by Medaka for variant calling
+  - htslib             # provides bgzip and tabix (required by Medaka)
+
+  # ── Polishing ─────────────────────────────────────────────────────────
+  - racon              # PacBio polishing fallback
+  - bwa                # read mapping for Illumina polishing
+  - polypolish         # Illumina polisher (also installs polypolish_insert_filter)
+
+  # ── Optional assembly modules ─────────────────────────────────────────
+  - purge_dups         # diploid haplotig removal (split_fa, pbcstat, calcuts, get_seqs)
+  - mummer4            # nucmer for SNP analysis and dotplots
+
+  # ── Python packages ───────────────────────────────────────────────────
+  - pandas>=1.5
+  - matplotlib>=3.6
+  - biopython>=1.81
+  - decorator>=4.0
+  - typer>=0.9
   - pip
+
   - pip:
-      - medaka
-      - git+https://github.com/beyhanlab/FunCAT.git
+    # Medaka must be pip-installed (no stable conda package)
+    # Requires bcftools, bgzip, tabix to already be on PATH (installed above)
+    - medaka
+    - pyabpoa            # optional Medaka dependency, avoids runtime warning
+    # Install FunCAT itself
+    - git+https://github.com/beyhanlab/FunCAT.git

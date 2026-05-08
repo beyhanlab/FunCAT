@@ -1,4 +1,3 @@
-import typer
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -7,6 +6,7 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import typer
 
 from .assemble import run_assembly, READ_TYPE_CONFIGS
 from .qc import run_qc, scan_telomeres, discover_telomere_motif
@@ -14,26 +14,35 @@ from .compare import run_snp_analysis
 from .dotplot_run import run_dotplot
 from .report import generate_report
 
+
 def _check_dependencies():
-    """Check all required tools are installed and warn about optional ones."""
+    """
+    Check all required and optional tools are installed.
+    Required tools cause a hard exit with a clear install message.
+    Optional tools print a warning but allow FunCAT to continue.
+    Includes Medaka hidden dependencies: bcftools, bgzip, tabix, samtools>=1.17.
+    """
     import shutil
 
     required = {
         "flye":      "conda install -c bioconda flye",
         "minimap2":  "conda install -c bioconda minimap2",
         "seqkit":    "conda install -c bioconda seqkit",
-        "samtools":  "conda install -c bioconda samtools",
         "filtlong":  "conda install -c bioconda filtlong",
+        "samtools":  "conda install -c bioconda 'samtools>=1.17'",
+        "bcftools":  "conda install -c bioconda bcftools",
+        "bgzip":     "conda install -c bioconda htslib",
+        "tabix":     "conda install -c bioconda htslib",
     }
     optional = {
-        "medaka":       "pip install medaka",
-        "racon":        "conda install -c bioconda racon",
-        "purge_dups":   "conda install -c bioconda purge_dups",
-        "nucmer":       "conda install -c bioconda mummer",
-        "polypolish":   "conda install -c bioconda polypolish",
+        "medaka":                   "pip install medaka",
+        "racon":                    "conda install -c bioconda racon",
+        "purge_dups":               "conda install -c bioconda purge_dups",
+        "nucmer":                   "conda install -c bioconda mummer4",
+        "polypolish":               "conda install -c bioconda polypolish",
         "polypolish_insert_filter": "conda install -c bioconda polypolish",
-        "pilon":        "conda install -c bioconda pilon",
-        "bwa":          "conda install -c bioconda bwa",
+        "pilon":                    "conda install -c bioconda pilon",
+        "bwa":                      "conda install -c bioconda bwa",
     }
 
     missing_required = []
@@ -43,6 +52,28 @@ def _check_dependencies():
         if shutil.which(tool) is None:
             missing_required.append((tool, install_cmd))
 
+    # Version check: samtools must be >= 1.17
+    # Older versions (e.g. 0.1.19) lack commands used by Medaka and
+    # confidence scoring (samtools depth -a, sort -@, etc.)
+    if shutil.which("samtools"):
+        try:
+            result = subprocess.run(
+                ["samtools", "--version"], capture_output=True, text=True
+            )
+            first_line = result.stdout.splitlines()[0]
+            version_str = first_line.split()[-1]
+            parts = version_str.split(".")
+            major, minor = int(parts[0]), int(parts[1])
+            if major == 0 or (major == 1 and minor < 17):
+                typer.echo(
+                    f"\n⚠️  samtools {version_str} detected — FunCAT requires >=1.17\n"
+                    f"   Old samtools will cause Medaka and confidence scoring to fail.\n"
+                    f"   Fix: conda install -c bioconda 'samtools>=1.17'\n",
+                    err=True,
+                )
+        except Exception:
+            pass
+
     for tool, install_cmd in optional.items():
         if shutil.which(tool) is None:
             missing_optional.append((tool, install_cmd))
@@ -50,8 +81,12 @@ def _check_dependencies():
     if missing_required:
         typer.echo("\n❌  Missing required dependencies:\n", err=True)
         for tool, cmd in missing_required:
-            typer.echo(f"   {tool:15s}  →  {cmd}", err=True)
-        typer.echo("\nInstall the above tools and re-run FunCAT.\n", err=True)
+            typer.echo(f"   {tool:30s}  →  {cmd}", err=True)
+        typer.echo(
+            "\n   Fastest fix — reinstall the full environment:\n"
+            "   conda env create -f environment.yml\n",
+            err=True,
+        )
         raise typer.Exit(1)
 
     if missing_optional:
@@ -66,6 +101,7 @@ def _default_wizard():
     _check_dependencies()
     from .wizard import wizard
     wizard()
+
 
 app = typer.Typer(
     help=(
@@ -91,6 +127,7 @@ app = typer.Typer(
     invoke_without_command=True,
 )
 
+
 @app.callback()
 def main(ctx: typer.Context):
     if ctx.invoked_subcommand is None:
@@ -108,8 +145,7 @@ def analyze_reads(reads, outdir):
     lengths_file = outdir / "read_lengths.tsv"
     # awk $NF always grabs the last field (the length), regardless of how many
     # SAM auxiliary tags modern Dorado basecaller embeds in read names.
-    # This makes the function robust to any basecaller version or read type
-    # (Nanopore, PacBio HiFi, split reads, etc).
+    # Robust to any basecaller version, read type, or split-read tags.
     run(f"seqkit fx2tab -n -l {reads} | awk '{{print $NF}}' > {lengths_file}")
     df = pd.read_csv(lengths_file, header=None, names=["length"])
     lengths = pd.to_numeric(df["length"], errors="coerce").dropna().astype(int)
@@ -143,26 +179,21 @@ def preview_filter(lengths, cutoff):
 def assemble(
     reads:          str = typer.Argument(..., help="Path to input reads (FASTQ/FASTQ.gz)"),
     gsize:          str = typer.Argument(..., help="Estimated genome size, e.g. 40m, 1.2g"),
-    outdir:         str = typer.Option("funcat_out",  help="Output directory"),
-    threads:        int = typer.Option(8,                 help="CPU threads"),
-    min_read_len:   int = typer.Option(0,                 help="Min read length filter (0=off)"),
-    downsample_cov: int = typer.Option(0,                 help="Downsample coverage (0=off)"),
-    min_contig_size:int = typer.Option(5000,              help="Min contig size after pruning"),
-    read_type:      str = typer.Option("nano-hq",         help="nano-hq | nano-raw | pacbio-hifi"),
-    ploidy:         str = typer.Option("haploid",         help="haploid | diploid"),
-    asm_coverage:   int = typer.Option(60,                help="Flye --asm-coverage"),
-    illumina_r1:    Optional[str] = typer.Option(None,    help="Illumina R1 reads for polishing (optional)"),
-    illumina_r2:    Optional[str] = typer.Option(None,    help="Illumina R2 reads for polishing (optional)"),
-    illumina_polisher: str = typer.Option("polypolish",   help="polypolish | pilon"),
+    outdir:         str = typer.Option("funcat_out",       help="Output directory"),
+    threads:        int = typer.Option(8,                  help="CPU threads"),
+    min_read_len:   int = typer.Option(0,                  help="Min read length filter (0=off)"),
+    downsample_cov: int = typer.Option(0,                  help="Downsample coverage (0=off)"),
+    min_contig_size:int = typer.Option(5000,               help="Min contig size after pruning"),
+    read_type:      str = typer.Option("nano-hq",          help="nano-hq | nano-raw | pacbio-hifi"),
+    ploidy:         str = typer.Option("haploid",          help="haploid | diploid"),
+    asm_coverage:   int = typer.Option(60,                 help="Flye --asm-coverage"),
+    illumina_r1:    Optional[str] = typer.Option(None,     help="Illumina R1 reads for polishing (optional)"),
+    illumina_r2:    Optional[str] = typer.Option(None,     help="Illumina R2 reads for polishing (optional)"),
+    illumina_polisher: str = typer.Option("polypolish",    help="polypolish | pilon"),
 ):
     """
     Run the full FunCAT assembly pipeline (non-interactive).
     For guided setup, just run: funcat
-    
-    NEW: Illumina polishing support!
-    Use --illumina-r1 and --illumina-r2 to provide Illumina reads
-    for polishing after Medaka. This dramatically improves base
-    accuracy and reduces internal stop codons.
     """
     _check_dependencies()
     final = run_assembly(
@@ -187,9 +218,6 @@ def qc(
     """
     Run QC on any assembly FASTA: stats, contig histogram,
     telomere completeness scan, and self-contained HTML report.
-
-    Example:
-      funcat qc assembly.fasta --telomere TTAGGG --name MyStrain
     """
     run_qc(
         fasta=fasta, telomere=telomere, run_telomeres=run_telomeres,
@@ -206,20 +234,15 @@ def report(
     confidence: Optional[str] = typer.Option(None, help="Path to contig_confidence.tsv"),
     telomere:   Optional[str] = typer.Option(None, help="Telomere motif (auto if omitted)"),
 ):
-    """
-    Generate a standalone HTML report for any assembly FASTA.
-    Works on any FASTA — does not need to be from a full funcat run.
-    """
+    """Generate a standalone HTML report for any assembly FASTA."""
     fasta_path = Path(fasta)
     out_path   = Path(outdir) if outdir else fasta_path.parent
-
     telo_df = None
     if telomere:
         telo_df = scan_telomeres(str(fasta_path), telomere)
     elif typer.confirm("Run telomere auto-discovery?", default=True):
         motif   = discover_telomere_motif(str(fasta_path))
         telo_df = scan_telomeres(str(fasta_path), motif)
-
     html_path = generate_report(
         fasta=fasta_path,
         outdir=out_path,
@@ -235,14 +258,11 @@ def telo_scaffold(
     fasta:    str = typer.Argument(..., help="Path to assembly FASTA"),
     reads:    str = typer.Argument(..., help="Path to reads FASTQ"),
     outdir:   str = typer.Option("funcat_telo", help="Output directory"),
-    motif:    str = typer.Option("TTAGGG", help="Telomere motif"),
-    threads:  int = typer.Option(8, help="CPU threads"),
-    support:  int = typer.Option(5, help="Min supporting reads for a bridge"),
+    motif:    str = typer.Option("TTAGGG",      help="Telomere motif"),
+    threads:  int = typer.Option(8,             help="CPU threads"),
+    support:  int = typer.Option(5,             help="Min supporting reads for a bridge"),
 ):
-    """
-    Run telomere-guided scaffolding on an existing assembly.
-    Attaches small telomeric fragments to uncapped chromosome ends.
-    """
+    """Attach telomeric fragments to uncapped chromosome ends."""
     from .scaffold import run_telomere_scaffolding
     result = run_telomere_scaffolding(
         assembly=fasta, reads=reads, outdir=outdir, threads=threads,
@@ -285,7 +305,7 @@ def _compare_pair(args):
 def compare_folder(
     folder:  str = typer.Argument(..., help="Folder of genome FASTAs"),
     outdir:  str = typer.Option("funcat_comparisons", help="Output directory"),
-    threads: int = typer.Option(4, help="Parallel workers"),
+    threads: int = typer.Option(4,                    help="Parallel workers"),
 ):
     """Run SNP + dotplot comparisons for all genome pairs in a folder (parallelised)."""
     folder  = Path(folder)
